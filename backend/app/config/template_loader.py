@@ -26,7 +26,7 @@ class TemplateParameter(BaseModel):
 
 
 class URLPattern(BaseModel):
-    """URL解析模式"""
+    """URL模式匹配配置"""
     pattern: str
     param_mapping: Dict[str, int]
 
@@ -34,7 +34,7 @@ class URLPattern(BaseModel):
 class SubscriptionTemplate(BaseModel):
     """订阅模板"""
     id: str
-    display_name: str
+    template_name: str
     description: str
     icon: str
     platform: str
@@ -49,7 +49,7 @@ class SubscriptionTemplate(BaseModel):
 class TemplateSearchResult(BaseModel):
     """模板搜索结果"""
     template_id: str
-    display_name: str
+    template_name: str
     description: str
     icon: str
     platform: str
@@ -110,8 +110,8 @@ class TemplateLoader:
                     url_patterns.append(URLPattern(**pattern_data))
                 
                 template = SubscriptionTemplate(
-                    id=template_data['id'],
-                    display_name=template_data['display_name'],
+                    id=template_data['template_id'],
+                    template_name=template_data['template_name'],
                     description=template_data['description'],
                     icon=template_data['icon'],
                     platform=template_data['platform'],
@@ -184,7 +184,7 @@ class TemplateLoader:
             if score > 0:
                 results.append(TemplateSearchResult(
                     template_id=template.id,
-                    display_name=template.display_name,
+                    template_name=template.template_name,
                     description=template.description,
                     icon=template.icon,
                     platform=template.platform,
@@ -212,7 +212,7 @@ class TemplateLoader:
                     
                     results.append(TemplateSearchResult(
                         template_id=template.id,
-                        display_name=template.display_name,
+                        template_name=template.template_name,
                         description=template.description,
                         icon=template.icon,
                         platform=template.platform,
@@ -246,8 +246,8 @@ class TemplateLoader:
         if query_lower in template.platform.lower():
             score += 0.4
         
-        # 显示名称匹配 (权重: 0.3)
-        if query_lower in template.display_name.lower():
+        # 模板名称匹配 (权重: 0.3)
+        if query_lower in template.template_name.lower():
             score += 0.3
         
         return min(score, 1.0)  # 最高分1.0
@@ -280,17 +280,29 @@ class TemplateLoader:
         if not template:
             return None
         
+        # 验证参数
+        is_valid, error_message = self.validate_template_parameters(template_id, parameters)
+        if not is_valid:
+            logger.error(f"参数验证失败: {error_message}")
+            return None
+        
         try:
+            # 使用参数填充URL模板
             return template.url_template.format(**parameters)
         except KeyError as e:
-            logger.error(f"生成RSS URL失败，缺少参数: {e}")
+            logger.error(f"URL模板参数缺失: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"生成RSS URL失败: {e}")
             return None
 
 
-# 全局实例
-template_loader = TemplateLoader()
-
+# 全局模板加载器实例
+_template_loader = None
 
 def get_template_loader() -> TemplateLoader:
-    """获取模板加载器实例"""
-    return template_loader 
+    """获取全局模板加载器实例"""
+    global _template_loader
+    if _template_loader is None:
+        _template_loader = TemplateLoader()
+    return _template_loader 

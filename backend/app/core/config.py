@@ -26,9 +26,13 @@ class Settings(BaseSettings):
     # CORS配置
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = [
         "http://localhost:3000",  # Next.js开发服务器
+        "http://localhost:3001",  # Next.js开发服务器备用端口
         "http://localhost:8000",  # FastAPI开发服务器
+        "http://localhost:8001",  # FastAPI开发服务器实际端口
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001", 
         "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
     ]
     
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")

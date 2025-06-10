@@ -61,6 +61,12 @@ class SubscriptionService:
                     is_active BOOLEAN DEFAULT 1,
                     last_update TIMESTAMP,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    auto_fetch BOOLEAN DEFAULT 1,
+                    frequency VARCHAR(20) DEFAULT 'daily',
+                    custom_interval_minutes INTEGER DEFAULT 1440,
+                    preferred_time VARCHAR(5) DEFAULT '09:00',
+                    timezone VARCHAR(50) DEFAULT 'Asia/Shanghai',
+                    next_fetch_at TIMESTAMP,
                     FOREIGN KEY (template_id) REFERENCES subscription_templates (id)
                 )
             """)

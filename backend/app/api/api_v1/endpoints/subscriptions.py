@@ -10,6 +10,15 @@ from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
 from loguru import logger
 
+from app.models.subscription import (
+    SubscriptionTemplate,
+    SubscriptionCreateRequest,
+    SubscriptionResponse,
+    SubscriptionListResponse,
+    SubscriptionSchedule,
+    SubscriptionScheduleRequest
+)
+
 router = APIRouter()
 
 
@@ -229,13 +238,85 @@ async def delete_subscription(subscription_id: int) -> Dict[str, Any]:
         logger.info(f"删除订阅: {subscription_id}")
         
         return {
-            "message": "订阅删除成功",
-            "subscription_id": subscription_id,
-            "deleted_at": datetime.now().isoformat()
+            "success": True,
+            "message": f"订阅 {subscription_id} 已删除",
+            "subscription_id": subscription_id
         }
     except Exception as e:
         logger.error(f"删除订阅失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="删除订阅过程中发生错误"
+        )
+
+
+@router.get("/{subscription_id}/schedule", response_model=SubscriptionSchedule, summary="获取订阅调度配置")
+async def get_subscription_schedule(subscription_id: int) -> SubscriptionSchedule:
+    """
+    获取指定订阅的调度配置
+    """
+    try:
+        # TODO: 从数据库查询订阅调度配置
+        
+        # MVP阶段：返回模拟数据
+        return SubscriptionSchedule(
+            auto_fetch=True,
+            frequency="daily",
+            custom_interval_minutes=1440,
+            preferred_time="09:00",
+            timezone="Asia/Shanghai",
+            last_fetch_at=None,
+            next_fetch_at=None
+        )
+    except Exception as e:
+        logger.error(f"获取订阅调度配置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取订阅调度配置过程中发生错误"
+        )
+
+
+@router.put("/{subscription_id}/schedule", response_model=SubscriptionSchedule, summary="更新订阅调度配置")
+async def update_subscription_schedule(
+    subscription_id: int, 
+    request: SubscriptionScheduleRequest
+) -> SubscriptionSchedule:
+    """
+    更新指定订阅的调度配置
+    """
+    try:
+        # TODO: 更新数据库中的调度配置
+        # TODO: 重新计算下次抓取时间
+        # TODO: 更新调度器任务
+        
+        logger.info(f"更新订阅 {subscription_id} 调度配置: {request}")
+        
+        # 计算下次抓取时间（简化逻辑）
+        from datetime import datetime, timedelta
+        
+        if request.frequency == "daily":
+            next_fetch = datetime.now() + timedelta(days=1)
+        elif request.frequency == "three_days":
+            next_fetch = datetime.now() + timedelta(days=3)
+        elif request.frequency == "weekly":
+            next_fetch = datetime.now() + timedelta(weeks=1)
+        elif request.frequency == "custom":
+            next_fetch = datetime.now() + timedelta(minutes=request.custom_interval_minutes or 1440)
+        else:
+            next_fetch = datetime.now() + timedelta(days=1)
+        
+        return SubscriptionSchedule(
+            auto_fetch=request.auto_fetch,
+            frequency=request.frequency,
+            custom_interval_minutes=request.custom_interval_minutes or 1440,
+            preferred_time=request.preferred_time,
+            timezone=request.timezone,
+            last_fetch_at=None,
+            next_fetch_at=next_fetch
+        )
+    except Exception as e:
+        logger.error(f"更新订阅调度配置失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="更新订阅调度配置过程中发生错误"
         ) 

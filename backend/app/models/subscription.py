@@ -141,4 +141,24 @@ class RSSContent(BaseModel):
     pub_date: datetime = Field(..., description="发布时间")
     content_hash: str = Field(..., description="内容哈希值，用于去重")
     is_read: bool = False
-    created_at: Optional[datetime] = None 
+    created_at: Optional[datetime] = None
+
+
+class SubscriptionSchedule(BaseModel):
+    """订阅调度配置"""
+    auto_fetch: bool = Field(True, description="自动获取开关")
+    frequency: str = Field("daily", description="频率: daily|three_days|weekly|custom")
+    custom_interval_minutes: int = Field(1440, description="自定义间隔(分钟)")
+    preferred_time: str = Field("09:00", description="首选时间 HH:MM")
+    timezone: str = Field("Asia/Shanghai", description="时区")
+    last_fetch_at: Optional[datetime] = Field(None, description="上次获取时间")
+    next_fetch_at: Optional[datetime] = Field(None, description="下次获取时间")
+
+
+class SubscriptionScheduleRequest(BaseModel):
+    """订阅调度配置请求"""
+    auto_fetch: bool = Field(..., description="自动获取开关")
+    frequency: str = Field(..., description="频率: daily|three_days|weekly|custom")
+    custom_interval_minutes: Optional[int] = Field(1440, description="自定义间隔(分钟)")
+    preferred_time: str = Field("09:00", description="首选时间 HH:MM")
+    timezone: str = Field("Asia/Shanghai", description="时区") 

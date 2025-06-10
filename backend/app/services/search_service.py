@@ -67,7 +67,7 @@ class SearchService:
                 
                 api_result = TemplateSearchResult(
                     template_id=result.template_id,
-                    display_name=result.display_name,
+                    template_name=result.template_name,
                     description=result.description,
                     icon=result.icon,
                     platform=result.platform,
@@ -184,7 +184,7 @@ class SearchService:
             # 转换为字典格式，隐藏RSS URL等敏感信息
             return {
                 "id": template.id,
-                "display_name": template.display_name,
+                "template_name": template.template_name,
                 "description": template.description,
                 "icon": template.icon,
                 "platform": template.platform,
@@ -261,7 +261,7 @@ class SearchService:
                 platforms[template.platform]["template_count"] += 1
                 platforms[template.platform]["templates"].append({
                     "id": template.id,
-                    "display_name": template.display_name
+                    "template_name": template.template_name
                 })
             
             return list(platforms.values())
