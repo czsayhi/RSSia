@@ -153,24 +153,32 @@ class SubscriptionService:
     
     def create_subscription(self, request: SubscriptionCreateRequest, user_id: int = 1) -> SubscriptionResponse:
         """创建新订阅"""
+        from app.config.template_loader import get_template_loader
+        
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
-            # 获取模板信息
-            cursor.execute("""
-                SELECT platform, content_type, name, url_template
-                FROM subscription_templates 
-                WHERE id = ? AND is_active = 1
-            """, (request.template_id,))
+            # 使用新的模板加载器获取模板信息
+            template_loader = get_template_loader()
+            template = template_loader.get_template(request.template_id)
             
-            template_row = cursor.fetchone()
-            if not template_row:
+            if not template:
                 raise ValueError(f"订阅模板 {request.template_id} 不存在")
             
-            platform, content_type, template_name, url_template = template_row
+            # 验证参数
+            is_valid, error_message = template_loader.validate_template_parameters(
+                request.template_id, request.parameters
+            )
+            if not is_valid:
+                raise ValueError(f"参数验证失败: {error_message}")
             
             # 生成RSS URL
-            rss_url = url_template.format(user_id=request.target_user_id)
+            rss_url = template_loader.generate_rss_url(request.template_id, request.parameters)
+            if not rss_url:
+                raise ValueError("生成RSS URL失败")
+            
+            # 获取主要参数值作为target_user_id（向后兼容）
+            target_user_id = list(request.parameters.values())[0] if request.parameters else ""
             
             # 插入订阅记录
             cursor.execute("""
@@ -179,8 +187,8 @@ class SubscriptionService:
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
-                request.template_id,
-                request.target_user_id,
+                request.template_id,  # 现在使用字符串ID
+                target_user_id,
                 request.custom_name,
                 rss_url,
                 datetime.now()
@@ -192,10 +200,10 @@ class SubscriptionService:
             # 返回订阅信息
             return SubscriptionResponse(
                 id=subscription_id,
-                platform=PlatformType(platform),
-                content_type=ContentType(content_type),
-                template_name=template_name,
-                target_user_id=request.target_user_id,
+                platform=PlatformType(template.platform),
+                content_type=ContentType("dynamic"),  # 默认类型
+                template_name=template.display_name,
+                target_user_id=target_user_id,
                 custom_name=request.custom_name,
                 rss_url=rss_url,
                 is_active=True,

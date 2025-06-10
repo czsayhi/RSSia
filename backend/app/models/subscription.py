@@ -104,8 +104,8 @@ class UserSubscription(BaseModel):
 
 class SubscriptionCreateRequest(BaseModel):
     """创建订阅请求"""
-    template_id: int = Field(..., description="订阅模板ID")
-    target_user_id: str = Field(..., description="目标用户ID（如B站UID、微博UID等）")
+    template_id: str = Field(..., description="订阅模板ID")
+    parameters: Dict[str, str] = Field(..., description="订阅参数")
     custom_name: Optional[str] = Field(None, description="自定义订阅名称")
 
 
