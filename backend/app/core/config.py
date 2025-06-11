@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     RSSHUB_MAX_RETRIES: int = 3
     
     # RSS内容抓取配置
-    RSS_FETCH_INTERVAL_MINUTES: int = 30  # RSS内容抓取间隔
-    RSS_CONTENT_RETENTION_DAYS: int = 30  # 内容保留天数
+    RSS_FETCH_INTERVAL_MINUTES: int = 30  # RSS内容抓取间隔(分钟)
+    RSS_CONTENT_RETENTION_DAYS: int = 1   # 内容保留天数 - 调整为1天
     RSS_MAX_ENTRIES_PER_FEED: int = 100   # 每个Feed最大条目数
     
     # 定时任务配置
