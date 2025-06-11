@@ -43,7 +43,7 @@ class RSSContentItem(BaseModel):
     """完整的RSS内容项模型，包含所有业务字段"""
     
     # 基础标识字段
-    id: Optional[int] = Field(None, description="内容ID（后端生成）")
+    content_id: Optional[int] = Field(None, description="内容ID（后端生成）")
     subscription_id: int = Field(..., description="订阅ID")
     content_hash: str = Field(..., description="内容哈希（去重用）")
     
@@ -120,7 +120,7 @@ class ContentListResponse(BaseModel):
 # 兼容现有代码的简化模型
 class RSSContent(BaseModel):
     """RSS内容 (向后兼容) - 保持与现有代码的兼容性"""
-    id: Optional[int] = Field(None, description="内容唯一标识，系统自动生成")
+    content_id: Optional[int] = Field(None, description="内容唯一标识，系统自动生成")
     subscription_id: int = Field(..., description="关联用户订阅表，实现数据隔离")
     title: str = Field(..., description="内容标题，从RSS item提取并清理HTML标签")
     link: str = Field(..., description="内容原文地址，向后兼容字段名")
