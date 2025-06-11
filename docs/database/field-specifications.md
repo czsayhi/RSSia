@@ -35,7 +35,7 @@
 | `content_type` | VARCHAR(20) | NOT NULL DEFAULT 'text' | 内容类型：video/image_text/text | 2025-06-11 |
 | `description` | TEXT | NULL | 原始HTML描述内容，不做富媒体预处理 | 2025-06-11 |
 | `description_text` | TEXT | NULL | 纯文本描述内容，从HTML提取的纯文本版本 | 2025-06-11 |
-| `cover_image_url` | VARCHAR(1000) | NULL | 封面图片URL，从媒体项中选择第一张图片 | 2025-06-11 |
+| `cover_image` | VARCHAR(1000) | NULL | 封面图片URL，从媒体项中选择第一张图片 | 2025-06-11 |
 | **AI增强字段 (预留)** |
 | `summary` | TEXT | NULL | AI生成摘要，预留字段，暂时置空 | 2025-06-11 |
 | `tags` | JSON | NULL | 内容标签数组，后端AI生成，用于筛选 | 2025-06-11 |
