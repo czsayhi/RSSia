@@ -5,7 +5,7 @@ API v1主路由
 
 from fastapi import APIRouter
 
-from app.api.api_v1.endpoints import auth, subscriptions, content, health, subscription_config, subscription_search
+from app.api.api_v1.endpoints import auth, subscriptions, subscriptions_v2, content, health, subscription_config, subscription_search, fetch_config_api, user_content, tag_admin
 
 # 创建API v1路由器
 api_router = APIRouter()
@@ -30,6 +30,12 @@ api_router.include_router(
 )
 
 api_router.include_router(
+    subscriptions_v2.router, 
+    prefix="/subscriptions-v2", 
+    tags=["订阅管理V2"]
+)
+
+api_router.include_router(
     content.router, 
     prefix="/content", 
     tags=["内容管理"]
@@ -45,4 +51,22 @@ api_router.include_router(
     subscription_search.router,
     prefix="/subscription-search",
     tags=["订阅搜索"]
+)
+
+api_router.include_router(
+    fetch_config_api.router,
+    prefix="/fetch",
+    tags=["拉取配置"]
+)
+
+api_router.include_router(
+    user_content.router,
+    prefix="",
+    tags=["用户内容"]
+)
+
+api_router.include_router(
+    tag_admin.router,
+    prefix="",
+    tags=["标签管理"]
 ) 

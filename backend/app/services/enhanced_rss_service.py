@@ -139,7 +139,7 @@ class EnhancedRSSService:
         
         # 媒体内容提取 (包含视频时长)
         media_items = self._extract_media_items(entry, description, original_link, feed_info.platform)
-        cover_image_url = self._determine_cover_image(media_items, feed_info.platform)
+        cover_image = self._determine_cover_image(media_items, feed_info.platform)
         
         # 内容类型判断
         content_type = self._determine_content_type(entry, media_items, feed_info.platform)
@@ -165,7 +165,7 @@ class EnhancedRSSService:
             
             # 媒体
             media_items=media_items,
-            cover_image_url=cover_image_url,
+            cover_image=cover_image,
             
             # 系统字段
             created_at=datetime.now()

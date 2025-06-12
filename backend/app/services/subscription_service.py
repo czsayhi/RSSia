@@ -23,7 +23,6 @@ class SubscriptionService:
         """初始化订阅服务"""
         self.db_path = db_path
         self._init_database()
-        self._init_templates()
     
     def _init_database(self):
         """初始化数据库"""
@@ -33,129 +32,99 @@ class SubscriptionService:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
-            # 创建订阅模板表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS subscription_templates (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    platform TEXT NOT NULL,
-                    content_type TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    url_template TEXT NOT NULL,
-                    example_user_id TEXT NOT NULL,
-                    is_active BOOLEAN DEFAULT 1,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+
             
-            # 创建用户订阅表
+            # 创建用户订阅表（简化版本，频率配置统一管理）
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS user_subscriptions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL DEFAULT 1,
-                    template_id INTEGER NOT NULL,
+                    template_id TEXT NOT NULL,               -- 现在使用字符串ID（JSON模板）
                     target_user_id TEXT NOT NULL,
                     custom_name TEXT,
                     rss_url TEXT NOT NULL,
                     is_active BOOLEAN DEFAULT 1,
-                    last_update TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    auto_fetch BOOLEAN DEFAULT 1,
-                    frequency VARCHAR(20) DEFAULT 'daily',
-                    custom_interval_minutes INTEGER DEFAULT 1440,
-                    preferred_time VARCHAR(5) DEFAULT '09:00',
-                    timezone VARCHAR(50) DEFAULT 'Asia/Shanghai',
-                    next_fetch_at TIMESTAMP,
-                    FOREIGN KEY (template_id) REFERENCES subscription_templates (id)
+                    last_update TIMESTAMP,                   -- 最后拉取时间
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # 执行新的数据库架构（风控和频率配置）
+            self._init_fetch_control_tables(cursor)
             
             conn.commit()
     
-    def _init_templates(self):
-        """初始化默认模板"""
-        templates = [
-            {
-                "platform": "bilibili",
-                "content_type": "video", 
-                "name": "B站用户视频",
-                "description": "订阅B站用户的最新视频投稿",
-                "url_template": "https://rsshub.app/bilibili/user/video/{user_id}",
-                "example_user_id": "2267573"
-            },
-            {
-                "platform": "bilibili",
-                "content_type": "dynamic",
-                "name": "B站用户动态", 
-                "description": "订阅B站用户的最新动态",
-                "url_template": "https://rsshub.app/bilibili/user/dynamic/{user_id}",
-                "example_user_id": "2267573"
-            },
-            {
-                "platform": "weibo",
-                "content_type": "post",
-                "name": "微博用户动态",
-                "description": "订阅微博用户的最新动态",
-                "url_template": "https://rsshub.app/weibo/user/{user_id}",
-                "example_user_id": "1195230310"
-            }
-        ]
+    def _init_fetch_control_tables(self, cursor):
+        """初始化订阅频率配置和风控表"""
+        # 用户拉取记录表（每日限流控制）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_fetch_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                fetch_date DATE NOT NULL,
+                fetch_count INTEGER DEFAULT 0,
+                auto_fetch_count INTEGER DEFAULT 0,
+                manual_fetch_count INTEGER DEFAULT 0,
+                last_fetch_at TIMESTAMP,
+                last_fetch_success BOOLEAN,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # 检查是否已有模板
-            cursor.execute("SELECT COUNT(*) FROM subscription_templates")
-            count = cursor.fetchone()[0]
-            
-            if count == 0:
-                # 插入默认模板
-                for template in templates:
-                    cursor.execute("""
-                        INSERT INTO subscription_templates 
-                        (platform, content_type, name, description, url_template, example_user_id)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        template["platform"],
-                        template["content_type"], 
-                        template["name"],
-                        template["description"],
-                        template["url_template"],
-                        template["example_user_id"]
-                    ))
-                
-                conn.commit()
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_fetch_date ON user_fetch_logs (user_id, fetch_date)")
+        
+        # 拉取任务记录表（重试逻辑控制）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fetch_task_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                task_type VARCHAR(20) NOT NULL,
+                task_key VARCHAR(100) NOT NULL,
+                scheduled_at TIMESTAMP NOT NULL,
+                executed_at TIMESTAMP,
+                attempt_count INTEGER DEFAULT 0,
+                max_attempts INTEGER DEFAULT 3,
+                status VARCHAR(20) DEFAULT 'pending',
+                success_count INTEGER DEFAULT 0,
+                total_count INTEGER DEFAULT 0,
+                error_message TEXT,
+                next_retry_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_task_key ON fetch_task_logs (task_key)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_task_status ON fetch_task_logs (user_id, status)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scheduled_at ON fetch_task_logs (scheduled_at)")
+        
+        # 订阅频率配置表（用户维度配置）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_fetch_configs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
+                auto_fetch_enabled BOOLEAN DEFAULT 0,
+                frequency VARCHAR(20) DEFAULT 'daily',
+                preferred_hour INTEGER DEFAULT 9,
+                timezone VARCHAR(50) DEFAULT 'Asia/Shanghai',
+                daily_limit INTEGER DEFAULT 10,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_auto_fetch ON user_fetch_configs (user_id, auto_fetch_enabled)")
+    
+
     
     def get_templates(self) -> List[SubscriptionTemplate]:
-        """获取所有订阅模板"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, platform, content_type, name, description, 
-                       url_template, example_user_id, is_active, created_at, updated_at
-                FROM subscription_templates 
-                WHERE is_active = 1
-                ORDER BY id
-            """)
-            
-            templates = []
-            for row in cursor.fetchall():
-                template = SubscriptionTemplate(
-                    id=row[0],
-                    platform=PlatformType(row[1]),
-                    content_type=ContentType(row[2]),
-                    name=row[3],
-                    description=row[4],
-                    url_template=row[5],
-                    example_user_id=row[6],
-                    is_active=bool(row[7]),
-                    created_at=datetime.fromisoformat(row[8]) if row[8] else None,
-                    updated_at=datetime.fromisoformat(row[9]) if row[9] else None
-                )
-                templates.append(template)
-            
-            return templates
+        """获取所有订阅模板（现在从JSON配置文件获取）"""
+        from app.config.template_loader import get_template_loader
+        
+        template_loader = get_template_loader()
+        return template_loader.get_all_templates()
     
     def create_subscription(self, request: SubscriptionCreateRequest, user_id: int = 1) -> SubscriptionResponse:
         """创建新订阅"""
@@ -208,7 +177,7 @@ class SubscriptionService:
                 id=subscription_id,
                 platform=PlatformType(template.platform),
                 content_type=ContentType("dynamic"),  # 默认类型
-                template_name=template.display_name,
+                template_name=template.template_name,
                 target_user_id=target_user_id,
                 custom_name=request.custom_name,
                 rss_url=rss_url,
@@ -219,6 +188,8 @@ class SubscriptionService:
     
     def get_user_subscriptions(self, user_id: int = 1, page: int = 1, size: int = 20) -> SubscriptionListResponse:
         """获取用户订阅列表"""
+        from app.config.template_loader import get_template_loader
+        
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
@@ -229,34 +200,39 @@ class SubscriptionService:
             """, (user_id,))
             total = cursor.fetchone()[0]
             
-            # 获取分页数据
+            # 获取分页数据（不再JOIN subscription_templates表）
             offset = (page - 1) * size
             cursor.execute("""
-                SELECT us.id, st.platform, st.content_type, st.name, 
-                       us.target_user_id, us.custom_name, us.rss_url, 
-                       us.is_active, us.last_update, us.created_at
-                FROM user_subscriptions us
-                JOIN subscription_templates st ON us.template_id = st.id
-                WHERE us.user_id = ? AND us.is_active = 1
-                ORDER BY us.created_at DESC
+                SELECT id, template_id, target_user_id, custom_name, rss_url, 
+                       is_active, last_update, created_at
+                FROM user_subscriptions
+                WHERE user_id = ? AND is_active = 1
+                ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
             """, (user_id, size, offset))
             
+            # 获取模板加载器
+            template_loader = get_template_loader()
+            
             subscriptions = []
             for row in cursor.fetchall():
-                subscription = SubscriptionResponse(
-                    id=row[0],
-                    platform=PlatformType(row[1]),
-                    content_type=ContentType(row[2]),
-                    template_name=row[3],
-                    target_user_id=row[4],
-                    custom_name=row[5],
-                    rss_url=row[6],
-                    is_active=bool(row[7]),
-                    last_update=datetime.fromisoformat(row[8]) if row[8] else None,
-                    created_at=datetime.fromisoformat(row[9])
-                )
-                subscriptions.append(subscription)
+                # 从JSON配置文件获取模板信息
+                template = template_loader.get_template(row[1])  # template_id
+                
+                if template:
+                    subscription = SubscriptionResponse(
+                        id=row[0],
+                        platform=PlatformType(template.platform),
+                        content_type=ContentType("dynamic"),  # 默认类型
+                        template_name=template.template_name,
+                        target_user_id=row[2],
+                        custom_name=row[3],
+                        rss_url=row[4],
+                        is_active=bool(row[5]),
+                        last_update=datetime.fromisoformat(row[6]) if row[6] else None,
+                        created_at=datetime.fromisoformat(row[7])
+                    )
+                    subscriptions.append(subscription)
             
             return SubscriptionListResponse(
                 subscriptions=subscriptions,
@@ -274,6 +250,19 @@ class SubscriptionService:
                 SET is_active = 0 
                 WHERE id = ? AND user_id = ?
             """, (subscription_id, user_id))
+            
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def update_subscription_status(self, subscription_id: int, is_active: bool, user_id: int = 1) -> bool:
+        """更新订阅状态"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE user_subscriptions 
+                SET is_active = ? 
+                WHERE id = ? AND user_id = ?
+            """, (is_active, subscription_id, user_id))
             
             conn.commit()
             return cursor.rowcount > 0 

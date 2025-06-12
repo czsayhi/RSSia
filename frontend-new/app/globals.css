@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%; /* white */
+    --foreground: 222.2 84% 4.9%; /* almost black */
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 222.2 47.4% 11.2%; /* Default primary for user messages */
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    /* Adjusted for YouTube light theme */
+    --muted: 220 20% 96%; /* neutral-100/zinc-100 for unselected tags, search button bg, AI messages */
+    --muted-foreground: 215.4 16.3% 46.9%; /* neutral-500 for text on muted */
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 13% 91%; /* neutral-200/zinc-200 for borders */
+    --input: 220 13% 91%; /* neutral-200 for input borders, search input bg is --background */
+    --ring: 222.2 84% 4.9%; /* Default ring color (often blueish or primary) */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 3.9%; /* almost black, youtube dark bg is #0f0f0f */
+    --foreground: 0 0% 98%; /* almost white, youtube dark text is #f1f1f1 */
+
+    --card: 240 10% 3.9%; /* Dark card background */
+    --card-foreground: 0 0% 98%; /* Light card text */
+
+    --popover: 240 10% 3.9%; /* Ensure popover bg matches dark theme */
+    --popover-foreground: 0 0% 98%; /* Ensure popover text matches dark theme */
+
+    --primary: 210 40% 98%; /* Light primary for user messages in dark mode */
+    --primary-foreground: 222.2 47.4% 11.2%; /* Dark text on light primary */
+
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+
+    /* Adjusted for YouTube dark theme */
+    --muted: 240 5% 18%; /* neutral-800/zinc-800 (#272727) for unselected tags, search button bg, AI messages */
+    --muted-foreground: 210 20% 70%; /* neutral-400/zinc-400 for text on muted */
+
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 4% 25%; /* neutral-700/zinc-700 (#3f3f3f) for borders */
+    --input: 240 6% 10%; /* neutral-900/zinc-900 (#181818) for search input bg */
+    --ring: 0 0% 98%; /* Dark mode ring color */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* For hiding scrollbar but keeping functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}

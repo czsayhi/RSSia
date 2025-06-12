@@ -9,6 +9,15 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import SubscriptionAssistantCard from "./subscription-assistant-card"
 import TestDropdown from "./test-dropdown"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 const filterButtonTags = [
   "全部",
@@ -61,11 +70,50 @@ function ThemeAwareLogo() {
   )
 }
 
+// 模拟手动更新订阅的API调用
+const updateSubscriptions = async (): Promise<{ success: boolean; message?: string }> => {
+  // 模拟网络延迟
+  await new Promise((resolve) => setTimeout(resolve, 2000))
+
+  // 模拟50%的概率达到更新上限
+  const reachedLimit = Math.random() > 0.5
+
+  if (reachedLimit) {
+    return { success: false, message: "已达到今日更新上限" }
+  } else {
+    return { success: true }
+  }
+}
+
 export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilterTags = true }: YoutubeHeaderProps) {
   const [activeTag, setActiveTag] = useState("全部")
   const [isAssistantOpen, setIsAssistantOpen] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [updateLimitDialogOpen, setUpdateLimitDialogOpen] = useState(false)
+  const [showTooltip, setShowTooltip] = useState(false)
 
   const openAssistant = () => setIsAssistantOpen(true)
+
+  const handleUpdateContent = async () => {
+    setIsUpdating(true)
+    try {
+      const result = await updateSubscriptions()
+      if (!result.success) {
+        setUpdateLimitDialogOpen(true)
+      } else {
+        // 成功更新，可以添加成功提示
+        console.log("订阅内容更新成功")
+      }
+    } catch (error) {
+      console.error("更新订阅内容失败:", error)
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleGitHubClick = () => {
+    window.open("https://github.com/czsayhi", "_blank", "noopener,noreferrer")
+  }
 
   return (
     <>
@@ -86,7 +134,7 @@ export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilte
                   <Input
                     type="search"
                     placeholder="搜索"
-                    className="w-full rounded-l-full pl-10 pr-4 h-10 border-r-0 focus-visible:ring-offset-0 focus-visible:ring-1 focus-visible:ring-ring bg-background dark:bg-neutral-950 border-border dark:border-neutral-700"
+                    className="w-full rounded-l-full pl-10 pr-4 h-10 border-r-0 focus-visible:ring-offset-0 focus-visible:ring-0 focus-visible:border-input bg-background dark:bg-neutral-950 border-border dark:border-neutral-700"
                     readOnly
                   />
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -103,21 +151,54 @@ export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilte
               </div>
             </div>
           )}
-          <div className="flex items-center gap-0.5 sm:gap-1">
+          <div className="flex items-center gap-3">
             {isLoggedIn && (
               <>
-                <Button variant="ghost" size="icon" onClick={openAssistant} aria-label="打开个人订阅助手">
-                  <span className="text-xl" role="img" aria-label="灯泡">
+                {/* 更新内容按钮 - 黑色背景矩形按钮 */}
+                <div className="relative">
+                  <Button
+                    onClick={handleUpdateContent}
+                    disabled={isUpdating}
+                    onMouseEnter={() => setShowTooltip(true)}
+                    onMouseLeave={() => setShowTooltip(false)}
+                    className="bg-foreground text-background hover:bg-foreground/90 px-4 py-2 h-9 rounded-md text-sm font-medium"
+                  >
+                    {isUpdating ? "更新中..." : "更新内容"}
+                  </Button>
+                  {showTooltip && (
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-2 bg-foreground text-background text-xs rounded-md whitespace-nowrap z-50">
+                      重新获取订阅内容，并非刷新页面
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-foreground"></div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 💡按钮 - 正方形边框按钮 */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={openAssistant}
+                  aria-label="打开个人订阅助手"
+                  className="h-9 w-9 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+                >
+                  <span className="text-lg" role="img" aria-label="灯泡">
                     💡
                   </span>
                 </Button>
-                <Button variant="ghost" size="icon" asChild aria-label="查看 GitHub 仓库">
-                  <Link href="https://github.com/czsayhi" target="_blank" rel="noopener noreferrer">
-                    <Image src="/icons/github.png" alt="GitHub Icon" width={22} height={22} className="dark:invert" />
-                  </Link>
+
+                {/* GitHub按钮 - 正方形边框按钮 */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleGitHubClick}
+                  aria-label="查看 GitHub 仓库"
+                  className="h-9 w-9 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Image src="/icons/github.png" alt="GitHub Icon" width={20} height={20} className="dark:invert" />
                 </Button>
               </>
             )}
+            {/* 用户头像/登录按钮 */}
             {isLoggedIn ? (
               <TestDropdown onLogout={onLogout} />
             ) : (
@@ -154,6 +235,19 @@ export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilte
         )}
       </header>
       {isLoggedIn && <SubscriptionAssistantCard isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} />}
+
+      {/* 更新上限对话框 */}
+      <AlertDialog open={updateLimitDialogOpen} onOpenChange={() => {}}>
+        <AlertDialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>🥲 已达到今日更新上限</AlertDialogTitle>
+            <AlertDialogDescription>当前无法手动更新订阅内容，明天再来看看吧...</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setUpdateLimitDialogOpen(false)}>确认</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

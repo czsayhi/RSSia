@@ -6,7 +6,28 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { type SubscriptionItem } from "@/lib/api-client"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useState } from "react"
+
+export interface SubscriptionItem {
+  id: string // Unique ID for the subscription instance
+  source_id: string // ID of the source type (e.g., "bilibili_user_videos")
+  display_name: string // Display name of the source type
+  identifier: string // Specific identifier for this subscription (e.g., UID, keyword)
+  icon: string // Path to icon
+  platform: string
+  status: "open" | "closed" | "error" // Extend as needed
+  create_time: string
+}
 
 interface SubscriptionListProps {
   subscriptions: SubscriptionItem[]
@@ -15,6 +36,39 @@ interface SubscriptionListProps {
 }
 
 export default function SubscriptionList({ subscriptions, onDelete, onStatusChange }: SubscriptionListProps) {
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
+  const [pendingAction, setPendingAction] = useState<{
+    id: string
+    action: "subscribe" | "unsubscribe"
+  } | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleSwitchChange = (id: string, checked: boolean) => {
+    setPendingAction({
+      id,
+      action: checked ? "subscribe" : "unsubscribe",
+    })
+    setConfirmDialogOpen(true)
+  }
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) return
+
+    setIsLoading(true)
+    try {
+      // 模拟API调用
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      onStatusChange(pendingAction.id, pendingAction.action === "subscribe")
+      console.log(`${pendingAction.action} action completed for ${pendingAction.id}`)
+    } catch (error) {
+      console.error("Failed to update subscription:", error)
+    } finally {
+      setIsLoading(false)
+      setConfirmDialogOpen(false)
+      setPendingAction(null)
+    }
+  }
+
   if (subscriptions.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8 border-2 border-dashed rounded-lg mt-8">
@@ -61,7 +115,7 @@ export default function SubscriptionList({ subscriptions, onDelete, onStatusChan
                 <TableCell>
                   <Switch
                     checked={sub.status === "open"}
-                    onCheckedChange={(checked) => onStatusChange(sub.id, checked)}
+                    onCheckedChange={(checked) => handleSwitchChange(sub.id, checked)}
                     aria-label="订阅状态开关"
                   />
                 </TableCell>
@@ -81,6 +135,33 @@ export default function SubscriptionList({ subscriptions, onDelete, onStatusChan
           </TableBody>
         </Table>
       </div>
+      <AlertDialog open={confirmDialogOpen} onOpenChange={() => {}}>
+        <AlertDialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingAction?.action === "subscribe" ? "🚀 确认订阅？" : "⚠️ 确认取消订阅？"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingAction?.action === "subscribe"
+                ? "订阅后，你将收到该订阅源的更新内容。"
+                : "取消订阅后，你将不再收到该订阅源的更新内容。"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setConfirmDialogOpen(false)
+                setPendingAction(null)
+              }}
+            >
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmAction} disabled={isLoading}>
+              {isLoading ? "处理中..." : "确认"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

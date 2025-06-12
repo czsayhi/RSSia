@@ -11,6 +11,9 @@ from loguru import logger
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
+from app.services.fetch_scheduler import FetchScheduler
+# 导入标签调度器
+from app.scheduler.tag_scheduler import tag_scheduler
 
 # 创建FastAPI应用实例
 app = FastAPI(
@@ -41,6 +44,8 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+# 全局调度器实例
+scheduler = None
 
 @app.on_event("startup")
 async def startup_event() -> None:
@@ -50,12 +55,25 @@ async def startup_event() -> None:
     logger.info(f"🔧 版本: {settings.PROJECT_VERSION}")
     logger.info(f"🌐 环境: {settings.ENVIRONMENT}")
     logger.info(f"🔗 API前缀: {settings.API_V1_STR}")
+    
+    # 启动RSS拉取调度器
+    global scheduler
+    scheduler = FetchScheduler()
+    scheduler.start()
+    logger.info("✅ RSS自动拉取调度器已启动")
+    
+    # 标签调度器已在导入时自动启动
+    logger.info("✅ 标签缓存调度器已启动")
 
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     """应用关闭时的清理事件"""
     logger.info("🛑 RSS智能订阅器后端服务正在关闭...")
+    global scheduler
+    if scheduler:
+        scheduler.stop()
+        logger.info("✅ RSS自动拉取调度器已停止")
 
 
 @app.get("/")
@@ -75,7 +93,9 @@ async def health_check() -> Dict[str, str]:
     return {
         "status": "healthy",
         "version": settings.PROJECT_VERSION,
-        "service": "rss-smart-subscriber"
+        "service": "rss-smart-subscriber",
+        "scheduler_running": scheduler.scheduler.running if scheduler else False,
+        "tag_scheduler_running": tag_scheduler.scheduler.running if tag_scheduler else False
     }
 
 

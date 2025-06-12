@@ -4,15 +4,23 @@ import { useState, useEffect, useRef } from "react"
 import Image from "next/image"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Search, Loader2 } from "lucide-react"
-import { searchSubscriptionSources } from "@/lib/api-client"
-import type { SearchResult } from "@/lib/api-client"
+import { Button } from "@/components/ui/button"
+import { Search, Loader2, X } from "lucide-react"
+
+export interface SearchResult {
+  id: string
+  display_name: string
+  description: string
+  icon: string // Path to icon
+  platform: string
+}
 
 interface SourceSearchInputProps {
   onSelect: (source: SearchResult) => void
+  mockResults: SearchResult[] // For now, pass mock results
 }
 
-export default function SourceSearchInput({ onSelect }: SourceSearchInputProps) {
+export default function SourceSearchInput({ onSelect, mockResults }: SourceSearchInputProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
   const [showResults, setShowResults] = useState(false)
@@ -20,23 +28,21 @@ export default function SourceSearchInput({ onSelect }: SourceSearchInputProps) 
   const searchContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const handler = setTimeout(async () => {
+    const handler = setTimeout(() => {
       if (searchTerm) {
         setIsLoading(true)
-        try {
-          // 调用后端API获取真实搜索结果 (数据协议适配)
-          const response = await searchSubscriptionSources({ 
-            query: searchTerm,
-            limit: 10 
-          })
-          setResults(response.results)
-          setShowResults(true)
-        } catch (error) {
-          console.error('搜索订阅源失败:', error)
-          setResults([])
-        } finally {
+        // Simulate API call
+        setTimeout(() => {
+          const filtered = mockResults.filter(
+            (r) =>
+              r.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              r.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              r.platform.toLowerCase().includes(searchTerm.toLowerCase()),
+          )
+          setResults(filtered)
           setIsLoading(false)
-        }
+          setShowResults(true)
+        }, 500) // 500ms delay to simulate network
       } else {
         setResults([])
         setShowResults(false)
@@ -46,7 +52,7 @@ export default function SourceSearchInput({ onSelect }: SourceSearchInputProps) 
     return () => {
       clearTimeout(handler)
     }
-  }, [searchTerm])
+  }, [searchTerm, mockResults])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -66,59 +72,70 @@ export default function SourceSearchInput({ onSelect }: SourceSearchInputProps) 
     setShowResults(false)
   }
 
+  const handleClearSearch = () => {
+    setSearchTerm("")
+    setShowResults(false)
+  }
+
   return (
     <div className="space-y-2 max-w-2xl mx-auto" ref={searchContainerRef}>
-      {" "}
-      {/* Increased width from max-w-md to max-w-2xl */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         <Input
-          type="search"
+          type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           onFocus={() => searchTerm && setShowResults(true)}
-          className="w-full pl-10 text-base"
-          // Removed placeholder attribute
+          className="w-full pl-10 pr-12 text-base focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-input [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
+          placeholder="搜索订阅源..."
         />
+        {searchTerm && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleClearSearch}
+            className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 bg-transparent hover:bg-muted"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        )}
+        {showResults && (
+          <Card className="absolute z-10 w-full mt-0 shadow-lg border-t-0 rounded-t-none">
+            <CardContent className="p-2 max-h-72 overflow-y-auto">
+              {isLoading ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : results.length > 0 ? (
+                results.map((result) => (
+                  <div
+                    key={result.id}
+                    onClick={() => handleSelectResult(result)}
+                    className="flex items-center gap-3 p-3 hover:bg-muted rounded-md cursor-pointer"
+                  >
+                    <Image
+                      src={result.icon || "/placeholder.svg"}
+                      alt={result.platform}
+                      width={24}
+                      height={24}
+                      className="h-6 w-6"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{result.display_name}</p>
+                      <p className="text-xs text-muted-foreground">{result.description}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="p-3 text-sm text-center text-muted-foreground">暂无匹配结果</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
       <p className="text-xs text-muted-foreground text-center">
         请输入想订阅的平台，如微博、b站等，或直接粘贴想订阅的up主、想看的即刻圈子的页面url
       </p>
-      {showResults && (
-        <Card className="absolute z-10 w-full max-w-2xl mt-1 shadow-lg">
-          {" "}
-          {/* Matched width */}
-          <CardContent className="p-2 max-h-72 overflow-y-auto">
-            {isLoading ? (
-              <div className="flex items-center justify-center p-4">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : results.length > 0 ? (
-              results.map((result) => (
-                <div
-                  key={result.id}
-                  onClick={() => handleSelectResult(result)}
-                  className="flex items-center gap-3 p-3 hover:bg-muted rounded-md cursor-pointer"
-                >
-                  <Image
-                    src={result.icon || "/placeholder.svg"}
-                    alt={result.platform}
-                    width={24}
-                    height={24}
-                    className="h-6 w-6"
-                  />
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">{result.display_name}</p>
-                    <p className="text-xs text-muted-foreground">{result.description}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="p-3 text-sm text-center text-muted-foreground">暂无匹配结果</p>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

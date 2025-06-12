@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS rss_contents (
     content_type VARCHAR(20) NOT NULL DEFAULT 'text',
     description TEXT,
     description_text TEXT,
-    cover_image_url VARCHAR(1000),
+    cover_image VARCHAR(1000),
     
     -- AI增强字段 (预留)
     summary TEXT,
@@ -90,7 +90,7 @@ SELECT
     c.author,
     c.published_at,
     c.content_type,
-    c.cover_image_url,
+    c.cover_image,
     c.is_read,
     c.is_favorited,
     c.created_at,

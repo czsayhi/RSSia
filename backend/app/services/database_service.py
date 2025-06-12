@@ -86,7 +86,7 @@ class DatabaseService:
                 content_type VARCHAR(20) NOT NULL DEFAULT 'text',      -- 内容类型：video/image_text/text
                 description TEXT,                                       -- 原始HTML描述内容，不做富媒体预处理
                 description_text TEXT,                                  -- 纯文本描述内容，从HTML提取的纯文本版本
-                cover_image_url VARCHAR(1000),                         -- 封面图片URL，从媒体项中选择第一张图片
+                cover_image VARCHAR(1000),                         -- 封面图片URL，从媒体项中选择第一张图片
                 
                 -- AI增强字段 (预留)
                 summary TEXT,                                           -- AI生成摘要，预留字段，暂时置空
@@ -174,7 +174,7 @@ class DatabaseService:
                 c.author,
                 c.published_at,
                 c.content_type,
-                c.cover_image_url,
+                c.cover_image,
                 c.is_read,
                 c.is_favorited,
                 c.created_at,
