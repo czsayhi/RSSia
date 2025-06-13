@@ -257,13 +257,17 @@ async def _perform_manual_fetch(user_id: int, rss_service: EnhancedRSSService) -
         
         for subscription in subscriptions.subscriptions:
             try:
-                result = rss_service.fetch_and_process_rss(subscription.rss_url, user_id)
-                if result.get('success', False):
+                # 需要获取平台类型，这里暂时使用默认值
+                from app.models.content import PlatformType
+                platform = PlatformType.BILIBILI  # 实际应该从订阅信息中获取
+                
+                result = rss_service.fetch_and_process_content(subscription.rss_url, subscription.id, platform)
+                if result and len(result) > 0:
                     success_count += 1
                 else:
                     failed_subscriptions.append({
                         'subscription_id': subscription.id,
-                        'error': result.get('error', '未知错误')
+                        'error': '没有获取到内容'
                     })
             except Exception as e:
                 failed_subscriptions.append({
