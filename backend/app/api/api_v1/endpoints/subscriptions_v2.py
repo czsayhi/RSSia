@@ -76,7 +76,7 @@ async def delete_subscription(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"删除订阅失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"删除订阅失败: {str(e)}") 
 
 @router.put("/{subscription_id}/status")
 async def update_subscription_status(

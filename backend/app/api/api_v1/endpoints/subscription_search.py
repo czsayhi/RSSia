@@ -4,7 +4,7 @@
 """
 from typing import List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status, Depends
 from loguru import logger
 
 from app.services.search_service import get_search_service
@@ -13,48 +13,93 @@ from app.models.template import (
     URLParseResult,
     TemplateSearchRequest
 )
+from app.services.user_service import User
+from app.api.api_v1.endpoints.auth import get_current_user
 
 router = APIRouter()
 search_service = get_search_service()
 
+# 前端期望的订阅模板数据结构
+class SubscriptionTemplate:
+    def __init__(self, template_result, parsed_params=None):
+        self.template_id = template_result.template_id
+        self.template_name = template_result.template_name
+        self.platform = template_result.platform
+        self.description = template_result.description
+        # 将 required_params 映射为 parameters
+        self.parameters = []
+        if hasattr(template_result, 'required_params') and template_result.required_params:
+            for param in template_result.required_params:
+                param_dict = {
+                    "name": param.name,
+                    "display_name": param.display_name,
+                    "description": param.description,
+                    "type": param.type,
+                    "required": param.required,
+                    "placeholder": param.placeholder,
+                    "validation_regex": param.validation_regex,
+                    "validation_message": param.validation_message
+                }
+                # 如果有解析出的参数，填充默认值
+                if parsed_params and param.name in parsed_params:
+                    param_dict["default_value"] = parsed_params[param.name]
+                self.parameters.append(param_dict)
+        
+        # 如果有解析出的参数，保存到模板中
+        self.parsed_params = parsed_params or {}
 
-@router.get("/search", response_model=TemplateSearchResponse, summary="搜索订阅模板")
+    def to_dict(self):
+        return {
+            "template_id": self.template_id,
+            "template_name": self.template_name,
+            "platform": self.platform,
+            "description": self.description,
+            "parameters": self.parameters,
+            "parsed_params": self.parsed_params  # 添加解析参数
+        }
+
+@router.get("/search", response_model=List[Dict[str, Any]])
 async def search_templates(
-    query: str = Query(..., min_length=1, description="搜索关键词或URL"),
-    limit: int = Query(10, ge=1, le=50, description="返回结果数量限制")
-) -> TemplateSearchResponse:
+    query: str = Query(..., description="搜索关键词或URL"),
+    limit: int = Query(10, ge=1, le=50, description="返回结果数量限制"),
+    current_user: User = Depends(get_current_user)
+):
     """
     搜索订阅模板
-    
-    支持两种搜索方式：
-    1. **关键词搜索**：如"微博"、"用户"、"视频"等
-    2. **URL解析**：如"https://weibo.com/u/123456"，会自动解析参数
-    
-    Args:
-        query: 搜索关键词或URL
-        limit: 返回结果数量限制（1-50）
-        
-    Returns:
-        TemplateSearchResponse: 搜索结果，包含匹配的模板列表
-        
-    Example:
-        关键词搜索：`/search?query=微博&limit=5`
-        URL解析：`/search?query=https://weibo.com/u/1195230310`
+    支持关键词搜索和URL解析
     """
     try:
-        logger.info(f"收到搜索请求: query='{query}', limit={limit}")
+        logger.info(f"用户 {current_user.username} 搜索订阅模板: query='{query}', limit={limit}")
         
         # 执行搜索
-        result = search_service.search_templates(query, limit)
+        search_response = search_service.search_templates(query, limit)
         
-        logger.info(f"搜索完成: 返回 {result.total} 个结果")
-        return result
+        # 检查是否为URL，如果是则尝试解析参数
+        parsed_params_map = {}
+        if search_service._is_valid_url(query):
+            logger.info(f"检测到URL，尝试解析参数: {query}")
+            parse_result = search_service.parse_url(query)
+            if parse_result.success and parse_result.extracted_params:
+                # 为匹配的模板保存解析参数
+                parsed_params_map[parse_result.template_id] = parse_result.extracted_params
+                logger.info(f"URL解析成功，提取参数: {parse_result.extracted_params}")
+        
+        # 转换为前端期望的格式
+        subscription_templates = []
+        for result in search_response.results:
+            # 获取该模板的解析参数（如果有）
+            parsed_params = parsed_params_map.get(result.template_id)
+            template = SubscriptionTemplate(result, parsed_params)
+            subscription_templates.append(template.to_dict())
+        
+        logger.info(f"搜索完成: 返回 {len(subscription_templates)} 个结果")
+        return subscription_templates
         
     except Exception as e:
-        logger.error(f"搜索模板API失败: {e}")
+        logger.error(f"搜索订阅模板失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"搜索过程中发生错误: {str(e)}"
+            detail=f"搜索失败: {str(e)}"
         )
 
 

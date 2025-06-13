@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import Image from "next/image"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -27,46 +27,95 @@ export default function SourceSearchInput({ onSelect, onSearch, mockResults }: S
   const [showResults, setShowResults] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSearchTermRef = useRef<string>("") // 记录上次搜索的内容
+
+  // 更新搜索函数的引用
+  const onSearchRef = useRef(onSearch)
+  const mockResultsRef = useRef(mockResults)
 
   useEffect(() => {
-    const handler = setTimeout(async () => {
-      if (searchTerm) {
+    onSearchRef.current = onSearch
+    mockResultsRef.current = mockResults
+  }, [onSearch, mockResults])
+
+  // 优化的搜索函数
+  const performSearch = useCallback(async (query: string) => {
+    // 如果查询为空，不进行搜索
+    if (!query.trim()) {
+      setResults([])
+      setShowResults(false)
+      return
+    }
+
+    // 如果搜索内容与上次相同，不重复搜索
+    if (query.trim() === lastSearchTermRef.current) {
+      return
+    }
+
+    lastSearchTermRef.current = query.trim()
         setIsLoading(true)
-        try {
-          if (onSearch) {
-            // 使用异步搜索函数
-            const searchResults = await onSearch(searchTerm)
-            setResults(searchResults)
-          } else if (mockResults) {
-            // 使用mock数据进行本地过滤
-            const filtered = mockResults.filter(
-              (r) =>
-                r.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                r.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                r.platform.toLowerCase().includes(searchTerm.toLowerCase()),
-            )
-            setResults(filtered)
-          } else {
-            setResults([])
-          }
-          setShowResults(true)
-        } catch (error) {
-          console.error('搜索失败:', error)
-          setResults([])
-          setShowResults(true)
-        } finally {
-          setIsLoading(false)
-        }
+    
+    try {
+      if (onSearchRef.current) {
+        // 使用异步搜索函数
+        const searchResults = await onSearchRef.current(query.trim())
+        setResults(searchResults)
+      } else if (mockResultsRef.current) {
+        // 使用mock数据进行本地过滤
+        const filtered = mockResultsRef.current.filter(
+            (r) =>
+            r.display_name.toLowerCase().includes(query.toLowerCase()) ||
+            r.description.toLowerCase().includes(query.toLowerCase()) ||
+            r.platform.toLowerCase().includes(query.toLowerCase()),
+          )
+          setResults(filtered)
       } else {
         setResults([])
-        setShowResults(false)
       }
-    }, 300) // Debounce input
+      setShowResults(true)
+    } catch (error) {
+      console.error('搜索失败:', error)
+      setResults([])
+      setShowResults(true)
+    } finally {
+      setIsLoading(false)
+      }
+  }, [])
 
-    return () => {
-      clearTimeout(handler)
+  // 防抖效果
+  useEffect(() => {
+    // 清除之前的定时器
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
     }
-  }, [searchTerm, onSearch, mockResults])
+
+    // 如果搜索词为空，立即清空结果
+    if (!searchTerm.trim()) {
+      setResults([])
+      setShowResults(false)
+      setIsLoading(false)
+      lastSearchTermRef.current = ""
+      return
+    }
+
+    // 如果搜索内容与上次相同，不重复搜索
+    if (searchTerm.trim() === lastSearchTermRef.current) {
+      return
+    }
+
+    // 设置防抖定时器
+    debounceTimerRef.current = setTimeout(() => {
+      performSearch(searchTerm)
+    }, 300)
+
+    // 清理函数
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [searchTerm, performSearch])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -84,11 +133,28 @@ export default function SourceSearchInput({ onSelect, onSearch, mockResults }: S
     onSelect(result)
     setSearchTerm("") // Clear search term after selection
     setShowResults(false)
+    lastSearchTermRef.current = "" // 重置搜索记录
   }
 
   const handleClearSearch = () => {
     setSearchTerm("")
+    setResults([])
     setShowResults(false)
+    setIsLoading(false)
+    lastSearchTermRef.current = "" // 重置搜索记录
+  }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setSearchTerm(value)
+    
+    // 如果输入为空，立即清空结果
+    if (!value.trim()) {
+      setResults([])
+      setShowResults(false)
+      setIsLoading(false)
+      lastSearchTermRef.current = ""
+    }
   }
 
   return (
@@ -98,8 +164,8 @@ export default function SourceSearchInput({ onSelect, onSearch, mockResults }: S
         <Input
           type="text"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          onFocus={() => searchTerm && setShowResults(true)}
+          onChange={handleInputChange}
+          onFocus={() => searchTerm && results.length > 0 && setShowResults(true)}
           className="w-full pl-10 pr-12 text-base focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-input [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
           placeholder="搜索订阅源..."
         />

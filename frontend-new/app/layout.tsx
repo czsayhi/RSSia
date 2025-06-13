@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/contexts/auth-context"
 import { StagewiseToolbar } from "@stagewise/toolbar-next"
 import { ReactPlugin } from "@stagewise-plugins/react"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -32,6 +33,7 @@ export default function RootLayout({
         >
           <AuthProvider>
             {children}
+            <Toaster />
             <StagewiseToolbar 
               config={{
                 plugins: [ReactPlugin]

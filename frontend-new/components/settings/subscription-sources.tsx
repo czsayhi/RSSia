@@ -68,16 +68,11 @@ export default function SubscriptionSources() {
         id: template.template_id,
         display_name: template.template_name,
         description: template.description,
-        icon: `/icons/${template.platform}.svg`, // 前端根据平台生成图标路径
+        icon: `/icons/${template.platform}.svg`,
         platform: template.platform,
       }))
     } catch (error) {
       console.error('搜索失败:', error)
-      toast({
-        title: "搜索失败",
-        description: error instanceof Error ? error.message : "搜索订阅源时出错",
-        variant: "destructive",
-      })
       return []
     }
   }
@@ -87,6 +82,8 @@ export default function SubscriptionSources() {
     const template = searchResults.find(t => t.template_id === source.id)
     if (template) {
       setSelectedSource(template)
+      
+      // 移除自动解析参数的toast提示，因为用户可以直接看到表单中的自动填充
     }
   }
 
@@ -97,26 +94,21 @@ export default function SubscriptionSources() {
       const request: SubscriptionCreateRequest = {
         template_id: selectedSource.template_id,
         parameters: formData,
-        custom_name: formData.custom_name, // 如果表单包含自定义名称
+        custom_name: formData.custom_name,
       }
 
       const newSubscription = await createSubscription(request)
-      
-      // 更新本地状态
       setSubscriptions(prev => [...prev, newSubscription])
-      
-      // 关闭表单
-      setSelectedSource(null)
+    setSelectedSource(null)
       
       toast({
-        title: "订阅成功",
-        description: `已成功添加订阅：${newSubscription.custom_name || newSubscription.template_name}`,
+        title: "添加订阅成功",
+        variant: "default",
       })
     } catch (error) {
       console.error('创建订阅失败:', error)
       toast({
-        title: "订阅失败",
-        description: error instanceof Error ? error.message : "创建订阅时出错",
+        title: "添加订阅失败",
         variant: "destructive",
       })
     }
@@ -136,45 +128,39 @@ export default function SubscriptionSources() {
 
     try {
       await deleteSubscription(subscriptionToDelete)
-      
-      // 更新本地状态
       setSubscriptions(prev => prev.filter(sub => sub.id !== subscriptionToDelete))
       
       toast({
-        title: "删除成功",
-        description: "订阅已成功删除",
+        title: "删除订阅成功",
+        variant: "default",
       })
     } catch (error) {
       console.error('删除订阅失败:', error)
       toast({
-        title: "删除失败",
-        description: error instanceof Error ? error.message : "删除订阅时出错",
+        title: "删除订阅失败",
         variant: "destructive",
       })
     } finally {
-      setDeleteDialogOpen(false)
-      setSubscriptionToDelete(null)
-    }
+    setDeleteDialogOpen(false)
+    setSubscriptionToDelete(null)
+  }
   }
 
   const handleStatusChange = async (id: number, newStatus: boolean) => {
     try {
       await updateSubscriptionStatus(id, newStatus)
-      
-      // 更新本地状态
       setSubscriptions(prev =>
         prev.map(sub => sub.id === id ? { ...sub, is_active: newStatus } : sub)
       )
       
       toast({
         title: newStatus ? "订阅已开启" : "订阅已关闭",
-        description: newStatus ? "将接收该订阅源的更新" : "不再接收该订阅源的更新",
+        variant: "default",
       })
     } catch (error) {
       console.error('更新订阅状态失败:', error)
       toast({
         title: "更新失败",
-        description: error instanceof Error ? error.message : "更新订阅状态时出错",
         variant: "destructive",
       })
     }
@@ -191,6 +177,7 @@ export default function SubscriptionSources() {
       placeholder: param.placeholder,
       validation_regex: param.validation_regex,
       validation_message: param.validation_message,
+      default_value: param.default_value, // 传递默认值
     }))
   }
 
@@ -219,6 +206,7 @@ export default function SubscriptionSources() {
             schema={getFormSchema(selectedSource)}
             onSubmit={handleFormSubmit}
             onCancel={handleFormCancel}
+            parsedParams={selectedSource.parsed_params} // 传递解析参数
           />
         )}
         <SubscriptionList
