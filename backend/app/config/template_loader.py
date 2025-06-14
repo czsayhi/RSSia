@@ -62,7 +62,11 @@ class TemplateSearchResult(BaseModel):
 class TemplateLoader:
     """模板加载器 - 支持热更新"""
     
-    def __init__(self, config_path: str = "app/config/subscription_templates.json"):
+    def __init__(self, config_path: str = None):
+        if config_path is None:
+            # 使用绝对路径，确保能找到配置文件
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            config_path = os.path.join(backend_dir, "app", "config", "subscription_templates.json")
         self.config_path = Path(config_path)
         self._templates: List[SubscriptionTemplate] = []
         self._templates_dict: Dict[str, SubscriptionTemplate] = {}

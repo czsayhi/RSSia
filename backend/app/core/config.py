@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         raise ValueError(v)
     
     # 数据库配置
-    DATABASE_URL: str = "sqlite:///./rss_subscriber.db"
+    DATABASE_URL: str = "sqlite:///./data/rss_subscriber.db"
     DATABASE_ECHO: bool = False  # 生产环境中应设为False
     
     # RSSHub配置

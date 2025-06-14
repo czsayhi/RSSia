@@ -29,7 +29,11 @@ class User:
 class UserService:
     """用户管理服务"""
     
-    def __init__(self, db_path: str = "data/rss_subscriber.db"):
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            # 使用backend目录下的数据库
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            db_path = os.path.join(backend_dir, "data", "rss_subscriber.db")
         self.db_path = db_path
         # 确保数据目录存在
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
@@ -98,9 +102,25 @@ class UserService:
                 """, (username, email, password_hash, access_token, current_time, current_time))
                 
                 user_id = cursor.lastrowid
+                
+                # 为新用户创建默认拉取配置
+                cursor.execute("""
+                    INSERT INTO user_fetch_configs 
+                    (user_id, auto_fetch_enabled, frequency, preferred_hour, daily_limit, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id,
+                    False,  # 默认关闭自动拉取
+                    'daily',  # 默认每天
+                    8,  # 默认8:00拉取
+                    10,  # 默认每日10次限制
+                    current_time,
+                    current_time
+                ))
+                
                 conn.commit()
                 
-                logger.info(f"用户创建成功: {username} (ID: {user_id})")
+                logger.info(f"用户创建成功: {username} (ID: {user_id})，已创建默认拉取配置")
                 
                 return User(
                     user_id=user_id,

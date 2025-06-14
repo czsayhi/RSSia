@@ -19,7 +19,11 @@ from ..models.subscription import (
 class SubscriptionService:
     """订阅管理服务"""
     
-    def __init__(self, db_path: str = "data/rss_subscriber.db"):
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            # 使用backend目录下的数据库
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            db_path = os.path.join(backend_dir, "data", "rss_subscriber.db")
         """初始化订阅服务"""
         self.db_path = db_path
         self._init_database()
@@ -265,4 +269,8 @@ class SubscriptionService:
             """, (is_active, subscription_id, user_id))
             
             conn.commit()
-            return cursor.rowcount > 0 
+            return cursor.rowcount > 0
+
+
+# 创建全局实例
+subscription_service = SubscriptionService()

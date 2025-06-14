@@ -30,8 +30,7 @@ class EnhancedRSSService:
             'Accept': 'application/rss+xml, application/xml, text/xml, */*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
         }
-        # 视频时长服务暂时禁用
-        # self.video_duration_service = VideoDurationService()
+        # 视频时长服务暂时禁用，使用内置方法
         self.video_duration_service = None
     
     def fetch_and_process_content(self, rss_url: str, subscription_id: int, platform: PlatformType) -> List[RSSContentItem]:
