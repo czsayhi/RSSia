@@ -37,7 +37,7 @@ const filterButtonTags = [
   "新闻",
 ]
 
-interface YoutubeHeaderProps {
+interface RSSiaHeaderProps {
   isLoggedIn: boolean
   onLogin: () => void
   onLogout: () => void
@@ -91,7 +91,7 @@ const updateSubscriptions = async (): Promise<{ success: boolean; message?: stri
   }
 }
 
-export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilterTags = true, onContentRefresh }: YoutubeHeaderProps) {
+export default function RSSiaHeader({ isLoggedIn, onLogin, onLogout, showFilterTags = true, onContentRefresh }: RSSiaHeaderProps) {
   const [activeTag, setActiveTag] = useState("全部")
   const [isAssistantOpen, setIsAssistantOpen] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)

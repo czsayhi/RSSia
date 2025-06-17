@@ -50,7 +50,7 @@ scheduler = None
 @app.on_event("startup")
 async def startup_event() -> None:
     """应用启动时的初始化事件"""
-    logger.info("🚀 RSS智能订阅器后端服务启动中...")
+    logger.info("🚀 RSSia后端服务启动中...")
     logger.info(f"📋 项目名称: {settings.PROJECT_NAME}")
     logger.info(f"🔧 版本: {settings.PROJECT_VERSION}")
     logger.info(f"🌐 环境: {settings.ENVIRONMENT}")
@@ -69,7 +69,7 @@ async def startup_event() -> None:
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
     """应用关闭时的清理事件"""
-    logger.info("🛑 RSS智能订阅器后端服务正在关闭...")
+    logger.info("🛑 RSSia后端服务正在关闭...")
     global scheduler
     if scheduler:
         scheduler.stop()
@@ -84,7 +84,7 @@ async def shutdown_event() -> None:
 async def root() -> Dict[str, str]:
     """根路径健康检查接口"""
     return {
-        "message": "RSS智能订阅器后端服务",
+        "message": "RSSia后端服务",
         "version": settings.PROJECT_VERSION,
         "status": "running",
         "docs": "/docs"

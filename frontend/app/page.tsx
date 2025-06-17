@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import YoutubeHeader from "@/components/youtube-header"
+import RSSiaHeader from "@/components/rssia-header"
 import VideoGrid from "@/components/video-grid"
 import LoginDialog from "@/components/login-dialog"
 import { useAuth } from "@/contexts/auth-context"
@@ -32,7 +32,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <YoutubeHeader 
+              <RSSiaHeader 
         isLoggedIn={isAuthenticated} 
         onLogin={handleLogin} 
         onLogout={logout} 

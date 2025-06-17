@@ -1,9 +1,9 @@
 # RSS智能订阅器 - 项目综合状态报告
 
 > 📅 **生成时间**: 2025-06-17  
-> 📋 **报告版本**: v1.1.0  
-> 🎯 **项目版本**: v0.6.0 → v0.7.0 (开发中)  
-> 🔄 **最近更新**: 架构优化、串行处理流程分析、标签系统完善
+> 📋 **报告版本**: v1.2.0  
+> 🎯 **项目版本**: v0.6.0 → v0.7.0 (AI服务实现)  
+> 🔄 **最近更新**: AI架构设计完成、本地化AI方案确定、双链路服务架构
 
 ## 📊 项目概览
 
@@ -14,7 +14,8 @@
 - **内容聚合**: 统一多平台内容源，一站式信息获取
 - **智能筛选**: 基于用户偏好和行为的个性化内容推荐
 - **高效管理**: 简化的订阅配置和内容管理流程
-- **AI增强**: 预留AI摘要、标签和对话检索功能接口
+- **AI增强**: 智能内容预处理、个性化日报生成和智能对话服务
+- **本地化AI**: 基于本地化部署的AI服务，确保数据安全和成本控制
 
 ---
 
@@ -26,7 +27,7 @@
 后端: Python 3.12 + FastAPI + SQLite + APScheduler + Pydantic 2.5
 RSS引擎: RSSHub (公共实例 + 自部署支持)
 开发工具: Poetry + Docker Compose + ESLint + Prettier
-AI功能: OpenAI API (预留)
+AI功能: Qwen2.5-7B-Instruct + sentence-transformers + ChromaDB (本地化部署)
 ```
 
 ### 系统架构图
@@ -37,14 +38,26 @@ AI功能: OpenAI API (预留)
 │ - YouTube式UI   │    │ - RESTful API   │    │ - RSS内容抓取   │
 │ - 订阅管理界面  │    │ - 定时任务调度  │    │ - 多平台适配    │
 │ - 内容展示系统  │    │ - 用户认证      │    │ - 内容标准化    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+│ - AI对话界面    │    │ - AI服务链路    │    └─────────────────┘
+└─────────────────┘    └─────────────────┘             │
         │                       │                       │
         │              ┌─────────────────┐             │
-        └──────────────►│   SQLite 数据库  │◄────────────┘
-                       │                 │
-                       │ - 用户订阅配置  │
-                       │ - RSS内容存储   │
-                       │ - 标签缓存系统  │
+        │              │   SQLite 数据库  │◄────────────┘
+        │              │                 │
+        │              │ - 用户订阅配置  │
+        │              │ - RSS内容存储   │
+        │              │ - 标签缓存系统  │
+        │              │ - AI生成数据    │
+        │              └─────────────────┘
+        │                       │
+        │              ┌─────────────────┐
+        │              │   AI服务模块    │
+        │              │                 │
+        │              │ - Qwen2.5-7B    │
+        │              │ - 向量模型      │
+        │              │ - ChromaDB      │
+        │              │ - Prompt引擎    │
+        └──────────────►│ - 意图识别      │
                        └─────────────────┘
 ```
 
@@ -434,6 +447,357 @@ class CacheStrategy:
 - **计算效率**: 批量处理优化，支持1000+内容的标签计算
 - **内存占用**: 用户标签缓存控制在10KB以内
 - **更新策略**: 增量更新而非全量重计算
+
+---
+
+## 🧠 AI服务架构设计
+
+### AI架构概览
+
+RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个性化日报生成和智能对话服务。本架构基于本地化部署，确保数据安全和成本控制，通过多层安全防护和智能意图识别，提供可靠的AI增强功能。
+
+#### 核心目标
+- **智能内容预处理**：自动生成标签、主题、摘要
+- **个性化日报**：基于用户订阅内容生成每日报告
+- **智能对话**：基于RAG架构的内容问答系统
+- **安全可控**：多层防护，避免恶意利用
+- **本地化部署**：零API成本，数据不出本地
+
+### AI系统架构图
+
+```mermaid
+graph TB
+    %% 时间触发节点
+    Timer1["⏰ 定时任务<br/>6:00 AM"] 
+    Timer2["⏰ 定时任务<br/>6:30 AM"]
+    UserReq["👤 用户对话请求"]
+
+    %% AI预处理链路（独立）
+    subgraph PreProcess ["🔄 AI预处理链路（独立）"]
+        FetchContent["📥 批量拉取内容"]
+        ParallelProcess["⚡ 并行处理"]
+        LLMProcess["🤖 LLM处理<br/>摘要/标签/分类"]
+        VectorProcess["🧮 向量化处理"]
+        
+        FetchContent --> ParallelProcess
+        ParallelProcess --> LLMProcess
+        ParallelProcess --> VectorProcess
+    end
+
+    %% AI服务链路
+    subgraph AIService ["🎯 AI服务链路"]
+        IntentRecog["🎯 意图识别"]
+        BlacklistFilter["🚫 黑名单过滤"]
+        PromptEngine["⚙️ Prompt生成引擎"]
+        LLMInference["🤖 LLM推理"]
+        OutputFilter["✅ 输出过滤"]
+        
+        IntentRecog --> BlacklistFilter
+        BlacklistFilter --> PromptEngine
+        PromptEngine --> LLMInference
+        LLMInference --> OutputFilter
+    end
+
+    %% Prompt生成引擎详细
+    subgraph PromptEngineDetail ["⚙️ Prompt生成引擎核心"]
+        VectorSelector["向量库圈选规则"]
+        TemplateSelector["Prompt模板选择器"]
+        PromptAssembler["动态Prompt组装器"]
+        
+        VectorSelector --> TemplateSelector
+        TemplateSelector --> PromptAssembler
+    end
+
+    %% 模板库系统
+    subgraph TemplateLibrary ["📚 模板库系统"]
+        BlacklistTemplates["黑名单模板库"]
+        ConversationTemplates["基于主题的对话模板库"]
+        ReportTemplates["日报模板库"]
+        GeneralTemplates["通用模板库"]
+        VectorRules["向量检索规则库"]
+    end
+
+    %% 存储系统
+    subgraph Storage ["💾 存储系统"]
+        SQLiteDB[("SQLite标准库<br/>(完整内容+AI生成数据)")]
+        ChromaDB[("ChromaDB向量库<br/>(向量+元数据)")]
+    end
+
+    %% 连接关系
+    Timer1 --> FetchContent
+    UserReq --> IntentRecog
+    Timer2 --> IntentRecog
+    
+    LLMProcess --> SQLiteDB
+    VectorProcess --> ChromaDB
+    
+    PromptEngine --> PromptEngineDetail
+    PromptAssembler --> LLMInference
+    
+    ChromaDB --> VectorSelector
+    BlacklistTemplates --> BlacklistFilter
+    ConversationTemplates --> TemplateSelector
+    ReportTemplates --> TemplateSelector
+    GeneralTemplates --> TemplateSelector
+    VectorRules --> VectorSelector
+```
+
+### AI技术选型
+
+| 组件 | 技术选择 | 说明 |
+|------|----------|------|
+| **LLM模型** | Qwen2.5-7B-Instruct | 适配M1 MacBook Pro，模型大小约4GB |
+| **向量模型** | sentence-transformers | paraphrase-multilingual-MiniLM-L12-v2 |
+| **向量数据库** | ChromaDB | 本地化部署，支持相似度搜索 |
+| **标准数据库** | SQLite | 存储完整内容信息 |
+| **意图识别** | 关键词正则 + 轻量BERT | 前期正则实现，后期升级BERT |
+| **任务调度** | APScheduler | 与现有调度器集成 |
+
+### AI核心组件设计
+
+#### 1. AI预处理服务
+**功能**：对新入库的RSS内容进行智能预处理
+**调用场景**：预处理（定时触发）
+**Prompt模板**：预处理默认模板
+
+```python
+class AIPreprocessingService:
+    async def daily_preprocessing_task(self):
+        """每日预处理任务"""
+        # 1. 获取待处理内容
+        # 2. 批量处理（10条/批次）
+        # 3. LLM生成标签/主题/摘要
+        # 4. 向量化内容
+        # 5. 存储到SQLite和ChromaDB
+        # 6. 重试机制和兜底策略
+```
+
+#### 2. 意图识别引擎
+**功能**：分析用户输入，识别查询意图
+**支持意图类型**：
+- 内容查询
+- 摘要请求  
+- 推荐需求
+- 特定主题查询
+
+```python
+class IntentRecognitionService:
+    def analyze_user_intent(self, question: str, user_id: int) -> dict:
+        """分析用户意图"""
+        return {
+            "intent_type": "content_query",
+            "topics": ["AI", "技术"],
+            "tags": ["机器学习", "深度学习"],
+            "content_ids": [],
+            "is_recommendation": False,
+            "confidence": 0.8
+        }
+```
+
+#### 3. Prompt生成引擎
+**核心设计**：三种调用场景，各有独立的处理链路
+
+- **场景1：预处理场景** - 定时任务（每日6:00AM）
+- **场景2：对话场景** - 用户主动询问
+- **场景3：日报场景** - 定时任务（每日6:30AM）
+
+```python
+class PromptGenerationEngine:
+    async def generate_prompt(self, intent: dict, user_id: int, service_type: str) -> str:
+        """生成Prompt"""
+        if service_type == "preprocessing":
+            return await self._generate_preprocessing_prompt(content)
+        elif service_type == "conversation":
+            return await self._generate_conversation_prompt(intent, user_id)
+        elif service_type == "daily_report":
+            return await self._generate_daily_report_prompt(user_id)
+```
+
+#### 4. 向量库圈选服务
+**功能**：根据不同场景的检索规则，从向量库中选择相关内容
+
+```python
+class VectorSelectorService:
+    async def get_contents_by_intent(self, user_id: int, intent: dict) -> list:
+        """基于意图获取内容"""
+        # 1. 标签精确匹配
+        # 2. 主题相关匹配
+        # 3. 向量相似度搜索
+        # 4. 返回content_ids
+        
+    async def get_user_yesterday_contents(self, user_id: int) -> list:
+        """获取用户昨日内容（日报场景）"""
+        
+    async def get_recommended_contents(self, user_id: int, tags: list) -> list:
+        """获取推荐内容（跨用户检索）"""
+```
+
+#### 5. 黑名单过滤器
+**多层防护机制**：
+- **输入层**：过滤用户输入的恶意内容
+- **意图层**：检测Prompt注入攻击
+- **输出层**：过滤LLM输出的不当内容
+
+### AI API接口设计
+
+#### 对话接口
+```python
+@router.post("/api/v1/ai/conversation")
+async def ai_conversation(request: ConversationRequest):
+    """AI对话接口"""
+    # 1. 意图识别
+    # 2. 黑名单过滤
+    # 3. 生成Prompt
+    # 4. LLM推理
+    # 5. 输出过滤
+    return ConversationResponse(
+        success=True,
+        answer="基于您的订阅内容，我找到了相关信息...",
+        intent_info={"topics": ["AI"], "confidence": 0.8}
+    )
+```
+
+#### 日报接口
+```python
+@router.get("/api/v1/ai/daily-report/{date}")
+async def get_daily_report(date: str, current_user: User):
+    """获取每日报告"""
+    return DailyReportResponse(
+        date=date,
+        content="📰 今日要闻\n...",
+        generated_at=datetime.now()
+    )
+```
+
+### AI配置管理
+```python
+AI_CONFIG = {
+    "llm": {
+        "model_name": "Qwen/Qwen2.5-7B-Instruct",
+        "max_tokens": 2048,
+        "temperature": 0.7
+    },
+    "embedding": {
+        "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
+        "vector_dimension": 768
+    },
+    "preprocessing": {
+        "schedule": "0 6 * * *",  # 每日6:00AM
+        "batch_size": 10,
+        "max_retries": 3
+    },
+    "daily_report": {
+        "schedule": "30 6 * * *",  # 每日6:30AM
+        "min_content_count": 3
+    }
+}
+```
+
+### AI与现有系统集成
+
+#### 调度器集成
+```python
+# app/main.py
+class AIScheduler:
+    def __init__(self):
+        self.scheduler = AsyncIOScheduler()
+        self.preprocessing_service = AIPreprocessingService()
+        self.report_service = DailyReportService()
+    
+    def setup_jobs(self):
+        """设置AI相关定时任务"""
+        # AI预处理任务
+        self.scheduler.add_job(
+            self.preprocessing_service.daily_preprocessing_task,
+            'cron', hour=6, minute=0
+        )
+        
+        # 日报生成任务
+        self.scheduler.add_job(
+            self.report_service.generate_all_user_reports,
+            'cron', hour=6, minute=30
+        )
+
+# 在main.py中集成
+ai_scheduler = AIScheduler()
+ai_scheduler.setup_jobs()
+```
+
+#### 前端集成
+现有的对话卡片组件已经准备就绪，只需要连接后端API：
+
+```typescript
+// 前端调用示例
+const response = await fetch('/api/v1/ai/conversation', {
+  method: 'POST',
+  body: JSON.stringify({ question: userInput })
+});
+```
+
+### AI实施计划
+
+#### Phase 1: 基础AI预处理 (Week 1-2)
+- [ ] 本地LLM服务部署 (Qwen2.5-7B)
+- [ ] 向量化服务实现 (sentence-transformers)
+- [ ] ChromaDB向量数据库集成
+- [ ] 基础预处理调度器
+- [ ] 重试机制和兜底策略
+
+#### Phase 2: 意图识别与过滤 (Week 3)
+- [ ] 关键词正则意图识别
+- [ ] 黑名单过滤器实现
+- [ ] 基础安全防护测试
+- [ ] 性能基准测试
+
+#### Phase 3: Prompt生成引擎 (Week 4)
+- [ ] 向量库圈选规则实现
+- [ ] Prompt模板库建设
+- [ ] 动态Prompt组装器
+- [ ] 三种场景模板验证
+
+#### Phase 4: 对话与日报服务 (Week 5-6)
+- [ ] 对话API接口开发
+- [ ] 日报生成服务实现
+- [ ] 输出过滤优化
+- [ ] 前端集成测试
+
+#### Phase 5: 监控与优化 (Week 7)
+- [ ] 性能监控系统
+- [ ] 用户反馈收集
+- [ ] 模型效果优化
+- [ ] 生产环境部署
+
+### AI预期效果
+
+#### 性能指标
+- **意图识别准确率**: >85% (正则实现)
+- **内容检索相关性**: >80% (向量相似度)
+- **系统响应时间**: <2秒 (对话), <30秒 (日报)
+
+#### 安全指标
+- **黑名单拦截率**: >99%
+- **内容范围控制**: 100% (仅基于用户订阅)
+
+#### 用户体验指标
+- **对话成功率**: >90%
+- **日报阅读完成率**: >70%
+
+### AI后续优化方向
+
+#### 短期优化 (1-3个月)
+- BERT意图识别升级
+- 用户反馈机制
+- 模板个性化支持
+
+#### 中期拓展 (3-6个月)
+- 多模态内容支持
+- 智能推荐系统
+- 内容聚类分析
+
+#### 长期愿景 (6-12个月)
+- 模型微调
+- 知识图谱构建
+- 实时分析能力
     """完整的自动拉取调度系统 (473行)"""
     # - 用户订阅自动拉取
     # - 频率控制和风控机制
@@ -1172,17 +1536,20 @@ docs/
 - **内容筛选**: 筛选和搜索功能需要对接后端搜索API ❌
 - **实时更新**: 需要实现定期轮询或WebSocket连接 ❌
 
-#### 2. AI功能集成 - 20%完成 ⏳
-**已准备就绪**:
+#### 2. AI功能集成 - 35%完成 ⏳ ⬆️
+**已完成架构设计**:
+- **AI架构规范**: 完整的双链路AI服务架构设计 ✅
 - **前端AI界面**: 订阅助手聊天界面、AI摘要气泡组件 ✅
-- **数据结构**: shared_contents.summary字段预留 ✅
-- **配置预留**: OpenAI API配置项已设置 ✅
+- **数据结构**: shared_contents.summary字段预留，ChromaDB向量库设计 ✅
+- **技术选型**: Qwen2.5-7B + sentence-transformers + ChromaDB ✅
+- **API接口设计**: AI对话接口、日报接口规范 ✅
 
 **待开发功能**:
-- **内容摘要生成**: 集成LLM API生成内容智能摘要 ❌
-- **智能推荐**: 基于用户阅读历史的内容推荐算法 ❌
-- **聊天机器人**: 后端对话处理和上下文管理 ❌
-- **智能标签**: AI自动为内容生成标签 ❌
+- **AI预处理服务**: 本地LLM部署和内容预处理链路 ❌
+- **意图识别引擎**: 用户输入意图分析和黑名单过滤 ❌
+- **Prompt生成引擎**: 三场景Prompt模板和向量检索 ❌
+- **智能对话服务**: 基于RAG的内容问答系统 ❌
+- **个性化日报**: 自动生成用户日报功能 ❌
 
 #### 3. 高级功能开发 - 10%完成 ⏳
 **部分完成**:
@@ -1199,7 +1566,7 @@ docs/
 
 ## 📊 项目完成度总结 (基于真实代码分析)
 
-### 整体进展: 78%完成 🎯 (2025-06-17 更新)
+### 整体进展: 80%完成 🎯 (2025-06-17 更新)
 
 #### 按模块完成度:
 ```
@@ -1208,9 +1575,10 @@ docs/
 订阅管理系统:     85%完成 ✅
 内容处理系统:     95%完成 ✅ ⬆️ (串行处理架构优化)
 标签管理系统:     90%完成 ✅ ⬆️ (完整标签缓存实现)
+AI架构设计:       95%完成 ✅ 🆕 (完整AI服务架构规范)
 前端UI框架:       80%完成 ✅
 前后端集成:       30%完成 ⏳ ⬆️ (标签接口就绪)
-AI功能集成:       20%完成 ⏳
+AI功能实现:       35%完成 ⏳ ⬆️ (架构设计完成，待开发实现)
 高级功能:         10%完成 ⏳
 ```
 
@@ -1219,11 +1587,13 @@ AI功能集成:       20%完成 ⏳
 后端代码:     ~13,500行 Python (13个服务模块，已优化合并)
 前端代码:     ~8,000行 TypeScript/React
 配置文件:     ~500行 (Docker + 环境配置)
-文档:         ~16,500行 (技术文档 + 需求规格 + 架构分析)
-总计:         ~38,500行 ⬆️
+文档:         ~18,000行 (技术文档 + 需求规格 + 架构分析 + AI设计) ⬆️
+总计:         ~40,000行 ⬆️
 ```
 
 #### 🔥 最近架构优化亮点 (2025-06-17):
+- **AI架构设计完成**: 完整的双链路AI服务架构，包含预处理链路和服务链路 🆕
+- **本地化AI方案**: 基于Qwen2.5-7B的本地化部署，零API成本 🆕
 - **服务模块优化**: 删除冗余服务，合并功能相近模块
 - **串行处理确认**: 验证RSS拉取采用串行架构，符合限流和稳定性要求
 - **标签系统完善**: 完整的标签生成、缓存、筛选功能链路
@@ -1240,13 +1610,24 @@ AI功能集成:       20%完成 ⏳
 
 ## 🎯 下一阶段计划 (基于实际代码分析)
 
-### v0.7.0 - 前后端集成完成 (预计2025-01)
+### v0.7.0 - AI服务实现 (预计2025-01)
+**主要目标**: 实现AI架构设计，完成本地化AI服务部署
+
+**核心任务 (基于AI架构设计)**:
+- [ ] **本地LLM部署** - Qwen2.5-7B模型部署和配置
+- [ ] **向量数据库集成** - ChromaDB本地化部署和接口
+- [ ] **AI预处理服务** - 内容自动标签、摘要、分类
+- [ ] **意图识别引擎** - 用户输入分析和黑名单过滤
+- [ ] **智能对话服务** - 基于RAG的内容问答系统
+
+### v0.8.0 - 前后端集成完成 (预计2025-02)
 **主要目标**: 完成前后端API集成，实现数据流通
 
 **核心任务 (基于现有代码基础)**:
 - [ ] **内容列表集成** - video-grid组件对接用户内容API
 - [ ] **内容详情集成** - content-detail-modal使用真实数据
 - [ ] **搜索功能集成** - 连接后端全文搜索API
+- [ ] **AI界面集成** - 对话卡片连接AI服务接口
 - [ ] **状态同步** - 已读、收藏状态的前后端同步
 - [ ] **实时更新** - 实现自动刷新和数据同步机制
 - [ ] **加载优化** - 骨架屏和loading状态管理

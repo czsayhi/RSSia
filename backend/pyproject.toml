@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "rss-smart-subscriber-backend"
 version = "0.2.0"
-description = "RSS智能订阅器后端服务 - 基于FastAPI和RSSHub的智能内容聚合平台"
+description = "RSSia后端服务 - 基于FastAPI和RSS的智能内容聚合平台"
 authors = ["RSS Team <rss@example.com>"]
 readme = "README.md"
 packages = [{include = "app"}]

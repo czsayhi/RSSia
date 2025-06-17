@@ -3,7 +3,7 @@
 import type React from "react"
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
-import YoutubeHeader from "@/components/youtube-header"
+import RSSiaHeader from "@/components/rssia-header"
 import { useAuth } from "@/contexts/auth-context"
 
 export default function SettingsSubscriptionsLayout({
@@ -52,7 +52,7 @@ export default function SettingsSubscriptionsLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <YoutubeHeader isLoggedIn={isAuthenticated} onLogin={handleLogin} onLogout={handleLogout} showFilterTags={false} />
+              <RSSiaHeader isLoggedIn={isAuthenticated} onLogin={handleLogin} onLogout={handleLogout} showFilterTags={false} />
       <main className="flex-grow container mx-auto px-4 py-8">{children}</main>
     </div>
   )

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     """应用程序配置类"""
     
     # 基础项目信息
-    PROJECT_NAME: str = "RSS智能订阅器"
+    PROJECT_NAME: str = "RSSia"
     PROJECT_VERSION: str = "0.2.0"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
