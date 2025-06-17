@@ -34,8 +34,8 @@ RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个
           C["定时预处理任务<br/>(每日6:00AM)"] --> D["获取待处理内容"]
           D --> E["批量处理引擎<br/>(10条/批次)"]
           
-          E --> F["本地LLM服务<br/>(Qwen2.5-7B)"]
-          E --> G["本地向量模型<br/>(sentence-transformers)"]
+          E --> F["LLM模型<br/>(Qwen2.5-7B)"]
+          E --> G["向量模型<br/>(sentence-transformers)"]
           
           F --> H["生成标签/主题/摘要"]
           G --> I["生成向量嵌入<br/>(768维向量)"]
@@ -60,7 +60,7 @@ RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个
               S --> T["动态Prompt组装器"]
           end
           
-          T --> U["本地LLM推理"]
+          T --> U["LLM模型"]
           U --> V["输出过滤器"]
           V --> W["结果输出"]
       end
@@ -74,8 +74,8 @@ RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个
       end
       
       subgraph "存储系统"
-          Y1["SQLite标准库<br/>(完整内容+AI生成数据)"]
-          Y2["ChromaDB向量库<br/>(向量+元数据)"]
+          Y1[("SQLite标准库<br/>(完整内容+AI生成数据)")]
+          Y2[("ChromaDB向量库<br/>(向量+元数据)")]
       end
       
       J --> Y1
@@ -92,6 +92,10 @@ RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个
       style L fill:#f3e5f5
       style P fill:#f3e5f5
       style O fill:#fff3e0
+      style F fill:#ffea00
+      style G fill:#ffea00
+      style T fill:#81c784
+      style U fill:#ffea00
       style Y1 fill:#e8f5e8
       style Y2 fill:#e8f5e8
   ```
