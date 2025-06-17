@@ -1,5 +1,34 @@
 # RSSia
 
+<div align="center">
+  <!-- Banner图片 -->
+  <img src="frontend/public/banner.png" alt="RSSia Banner" width="100%" style="max-width: 800px;">
+  
+  <h3 style="margin: 20px 0; color: #666;">🚀 基于RSS和LLM的智能个人订阅器</h3>
+  <p style="margin: 20px 0; font-size: 1.1em; color: #888;">
+    提供轻量化的订阅源配置、友好的内容消费体验<br>
+    基于LLM提供内容分析、个性化日报和ChatBot对话服务
+  </p>
+  
+  <!-- 技术栈徽章 -->
+  <p>
+    <img src="https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/Next.js-15.2.4-000000?style=for-the-badge&logo=next.js&logoColor=white" alt="Next.js">
+    <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
+    <img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite">
+  </p>
+  
+  <!-- 项目状态徽章 -->
+  <p>
+    <img src="https://img.shields.io/github/stars/czsayhi/RSSia?style=social" alt="GitHub stars">
+    <img src="https://img.shields.io/github/forks/czsayhi/RSSia?style=social" alt="GitHub forks">
+    <img src="https://img.shields.io/github/license/czsayhi/RSSia?style=flat-square" alt="License">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome">
+  </p>
+</div>
+
+---
+
 基于RSS和LLM的智能个人订阅器，提供轻量化的订阅源配置、友好的内容消费体验，基于LLM提供内容分析、个性化日报和ChatBot对话服务。
 
 ## 📖 项目背景
