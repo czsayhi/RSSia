@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -16,58 +16,159 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { useToast } from "@/hooks/use-toast"
+import { 
+  fetchConfigService, 
+  formatUtils, 
+  type FetchConfig, 
+  type UpdateConfigRequest 
+} from "@/lib/services/fetchConfigService"
 
 export default function SubscriptionFrequency() {
-  const [autoSubscribe, setAutoSubscribe] = useState(true)
-  const [frequency, setFrequency] = useState("daily") // daily, three_days, weekly
-  const [subscribeTime, setSubscribeTime] = useState("09:00") // HH:MM format
+  // 状态管理
+  const [autoSubscribe, setAutoSubscribe] = useState(false)
+  const [frequency, setFrequency] = useState<'daily' | 'three_days' | 'weekly'>("daily")
+  const [subscribeTime, setSubscribeTime] = useState("09:00")
   const [isAlertOpen, setIsAlertOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isPageLoading, setIsPageLoading] = useState(true)
   const [pendingAction, setPendingAction] = useState<"enable" | "disable" | null>(null)
+  
+  const { toast } = useToast()
 
   const timeOptions = Array.from({ length: 24 }, (_, i) => {
     const hour = i.toString().padStart(2, "0")
     return `${hour}:00`
   })
 
-  const handleSaveChanges = () => {
-    // Simulate saving changes
-    console.log("Saving frequency settings:", { autoSubscribe, frequency, subscribeTime })
-    alert("订阅频率设置已保存！") // Replace with toast
+  // 页面初始化：加载用户配置
+  useEffect(() => {
+    loadUserConfig()
+  }, [])
+
+  /**
+   * 加载用户配置
+   */
+  const loadUserConfig = async () => {
+    try {
+      setIsPageLoading(true)
+      const config = await fetchConfigService.getUserConfig()
+      
+      // 设置表单初始值
+      setAutoSubscribe(config.auto_fetch_enabled)
+      setFrequency(config.frequency)
+      setSubscribeTime(formatUtils.hourToTimeString(config.preferred_hour))
+      
+    } catch (error) {
+      console.error('获取配置失败:', error)
+      toast({
+        title: "❓获取失败，请刷新页面"
+      })
+    } finally {
+      setIsPageLoading(false)
+    }
   }
 
+  /**
+   * 统一的配置更新函数
+   * @param config 要更新的配置
+   * @param successMessage 成功时显示的Toast消息
+   */
+  const updateConfig = async (config: UpdateConfigRequest, successMessage: string) => {
+    try {
+      setIsLoading(true)
+      
+      // 调用API更新配置
+      const updatedConfig = await fetchConfigService.updateUserConfig(config)
+      
+      // 更新本地状态
+      setAutoSubscribe(updatedConfig.auto_fetch_enabled)
+      setFrequency(updatedConfig.frequency)
+      setSubscribeTime(formatUtils.hourToTimeString(updatedConfig.preferred_hour))
+      
+      // 显示成功Toast
+      toast({
+        title: successMessage
+      })
+      
+    } catch (error) {
+      console.error('更新配置失败:', error)
+      toast({
+        title: "❌设置更新失败"
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  /**
+   * 保存频率和时间配置
+   */
+  const handleSaveChanges = async () => {
+    const config: UpdateConfigRequest = {
+      auto_fetch_enabled: autoSubscribe,
+      frequency: frequency,
+      preferred_hour: formatUtils.timeStringToHour(subscribeTime)
+    }
+    
+    await updateConfig(config, "✅设置更新成功")
+  }
+
+  /**
+   * 开关状态变更处理
+   */
   const handleSwitchChange = (checked: boolean) => {
     if (checked) {
-      // 如果用户是打开自动订阅
       setPendingAction("enable")
       setIsAlertOpen(true)
     } else {
-      // 如果用户是关闭自动订阅
       setPendingAction("disable")
       setIsAlertOpen(true)
     }
   }
 
+  /**
+   * 确认开关操作
+   */
   const handleConfirmAction = async () => {
-    setIsLoading(true)
-    try {
-      // 模拟API调用
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      if (pendingAction === "enable") {
-        setAutoSubscribe(true)
-        console.log("Enabling auto-subscribe")
-      } else if (pendingAction === "disable") {
-        setAutoSubscribe(false)
-        console.log("Disabling auto-subscribe")
-      }
-    } catch (error) {
-      console.error("Failed to update auto-subscribe setting:", error)
-    } finally {
-      setIsLoading(false)
-      setIsAlertOpen(false)
-      setPendingAction(null)
+    const isEnabling = pendingAction === "enable"
+    
+    const config: UpdateConfigRequest = {
+      auto_fetch_enabled: isEnabling,
+      frequency: frequency,
+      preferred_hour: formatUtils.timeStringToHour(subscribeTime)
     }
+    
+    const successMessage = isEnabling 
+      ? "🎉自动订阅已开启" 
+      : "🤫自动订阅已关闭"
+    
+    await updateConfig(config, successMessage)
+    
+    // 关闭弹窗
+    setIsAlertOpen(false)
+    setPendingAction(null)
+  }
+
+  /**
+   * 取消弹窗操作
+   */
+  const handleCancelAction = () => {
+    setIsAlertOpen(false)
+    setPendingAction(null)
+  }
+
+  // 页面加载状态
+  if (isPageLoading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center">
+            <div className="text-muted-foreground">加载配置中...</div>
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -84,14 +185,23 @@ export default function SubscriptionFrequency() {
                 开启后，系统将按以下设置自动获取更新。
               </span>
             </Label>
-            <Switch id="auto-subscribe-switch" checked={autoSubscribe} onCheckedChange={handleSwitchChange} />
+            <Switch 
+              id="auto-subscribe-switch" 
+              checked={autoSubscribe} 
+              onCheckedChange={handleSwitchChange}
+              disabled={isLoading}
+            />
           </div>
 
           {autoSubscribe && (
             <>
               <div className="space-y-2">
                 <Label htmlFor="frequency-select">订阅频率</Label>
-                <Select value={frequency} onValueChange={setFrequency}>
+                <Select 
+                  value={frequency} 
+                  onValueChange={(value: 'daily' | 'three_days' | 'weekly') => setFrequency(value)}
+                  disabled={isLoading}
+                >
                   <SelectTrigger id="frequency-select">
                     <SelectValue placeholder="选择频率" />
                   </SelectTrigger>
@@ -105,7 +215,11 @@ export default function SubscriptionFrequency() {
 
               <div className="space-y-2">
                 <Label htmlFor="time-select">订阅时间 (UTC+8)</Label>
-                <Select value={subscribeTime} onValueChange={setSubscribeTime}>
+                <Select 
+                  value={subscribeTime} 
+                  onValueChange={setSubscribeTime}
+                  disabled={isLoading}
+                >
                   <SelectTrigger id="time-select">
                     <SelectValue placeholder="选择时间" />
                   </SelectTrigger>
@@ -124,13 +238,18 @@ export default function SubscriptionFrequency() {
         </CardContent>
         {autoSubscribe && (
           <CardFooter>
-            <Button onClick={handleSaveChanges}>保存更改</Button>
+            <Button 
+              onClick={handleSaveChanges}
+              disabled={isLoading}
+            >
+              {isLoading ? "保存中..." : "保存更改"}
+            </Button>
           </CardFooter>
         )}
       </Card>
 
       <AlertDialog open={isAlertOpen} onOpenChange={() => {}}>
-        <AlertDialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingAction === "enable" ? "🚀 确认打开自动订阅？" : "⚠️ 确认关闭自动订阅？"}
@@ -142,12 +261,7 @@ export default function SubscriptionFrequency() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setIsAlertOpen(false)
-                setPendingAction(null)
-              }}
-            >
+            <AlertDialogCancel onClick={handleCancelAction}>
               取消
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmAction} disabled={isLoading}>

@@ -3,6 +3,10 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { AuthProvider } from "@/contexts/auth-context"
+import { StagewiseToolbar } from "@stagewise/toolbar-next"
+import { ReactPlugin } from "@stagewise-plugins/react"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -27,7 +31,15 @@ export default function RootLayout({
           disableTransitionOnChange={false}
           storageKey="rssreader-theme"
         >
-          {children}
+          <AuthProvider>
+            {children}
+            <Toaster />
+            <StagewiseToolbar 
+              config={{
+                plugins: [ReactPlugin]
+              }}
+            />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

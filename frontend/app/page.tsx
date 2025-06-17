@@ -1,8 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import YoutubeHeader from "@/components/youtube-header"
 import VideoGrid from "@/components/video-grid"
-import { useAuth } from "@/hooks/use-auth"
+import LoginDialog from "@/components/login-dialog"
+import { useAuth } from "@/contexts/auth-context"
 
 function LoggedOutView() {
   return (
@@ -15,18 +17,39 @@ function LoggedOutView() {
 }
 
 export default function HomePage() {
-  const { isLoggedIn, login, logout } = useAuth()
+  const { isAuthenticated, logout } = useAuth()
+  const [loginDialogOpen, setLoginDialogOpen] = useState(false)
+  const [contentRefreshTrigger, setContentRefreshTrigger] = useState(0)
+
+  const handleLogin = () => {
+    setLoginDialogOpen(true)
+  }
+
+  const handleContentRefresh = () => {
+    console.log('HomePage: 触发内容刷新')
+    setContentRefreshTrigger(prev => prev + 1)
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      <YoutubeHeader isLoggedIn={isLoggedIn} onLogin={login} onLogout={logout} />
-      {isLoggedIn ? (
+      <YoutubeHeader 
+        isLoggedIn={isAuthenticated} 
+        onLogin={handleLogin} 
+        onLogout={logout} 
+        onContentRefresh={handleContentRefresh}
+      />
+      {isAuthenticated ? (
         <main className="flex-grow p-4 md:px-6 lg:px-8 pt-6">
-          <VideoGrid />
+          <VideoGrid refreshTrigger={contentRefreshTrigger} />
         </main>
       ) : (
         <LoggedOutView />
       )}
+      
+      <LoginDialog
+        open={loginDialogOpen}
+        onOpenChange={setLoginDialogOpen}
+      />
     </div>
   )
 }

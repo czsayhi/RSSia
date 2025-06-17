@@ -3,7 +3,7 @@ RSS智能订阅器后端服务主应用
 基于FastAPI的RSS聚合和智能订阅平台
 """
 
-from typing import Dict
+from typing import Dict, Any, Union
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,7 @@ from loguru import logger
 
 from app.api.api_v1.api import api_router
 from app.core.config import settings
-from app.services.fetch_scheduler import FetchScheduler
+from app.services.auto_fetch_scheduler import AutoFetchScheduler
 # 导入标签调度器
 from app.scheduler.tag_scheduler import tag_scheduler
 
@@ -56,9 +56,9 @@ async def startup_event() -> None:
     logger.info(f"🌐 环境: {settings.ENVIRONMENT}")
     logger.info(f"🔗 API前缀: {settings.API_V1_STR}")
     
-    # 启动RSS拉取调度器
+    # 启动RSS拉取调度器（使用功能完整的AutoFetchScheduler）
     global scheduler
-    scheduler = FetchScheduler()
+    scheduler = AutoFetchScheduler()
     scheduler.start()
     logger.info("✅ RSS自动拉取调度器已启动")
     
@@ -74,6 +74,10 @@ async def shutdown_event() -> None:
     if scheduler:
         scheduler.stop()
         logger.info("✅ RSS自动拉取调度器已停止")
+    
+    # 关闭标签调度器
+    tag_scheduler.shutdown()
+    logger.info("✅ 标签缓存调度器已停止")
 
 
 @app.get("/")
@@ -88,7 +92,7 @@ async def root() -> Dict[str, str]:
 
 
 @app.get("/health")
-async def health_check() -> Dict[str, str]:
+async def health_check() -> Dict[str, Union[str, bool]]:
     """健康检查接口"""
     return {
         "status": "healthy",
@@ -107,7 +111,7 @@ if __name__ == "__main__":
     
     logger.info("🚀 直接运行模式启动服务...")
     uvicorn.run(
-        "main:app",
+        "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,

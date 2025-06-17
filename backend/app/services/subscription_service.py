@@ -197,20 +197,20 @@ class SubscriptionService:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
-            # 获取总数
+            # 获取总数（包含所有订阅源，不过滤is_active状态）
             cursor.execute("""
                 SELECT COUNT(*) FROM user_subscriptions 
-                WHERE user_id = ? AND is_active = 1
+                WHERE user_id = ?
             """, (user_id,))
             total = cursor.fetchone()[0]
             
-            # 获取分页数据（不再JOIN subscription_templates表）
+            # 获取分页数据（包含所有订阅源，不过滤is_active状态）
             offset = (page - 1) * size
             cursor.execute("""
                 SELECT id, template_id, target_user_id, custom_name, rss_url, 
                        is_active, last_update, created_at
                 FROM user_subscriptions
-                WHERE user_id = ? AND is_active = 1
+                WHERE user_id = ?
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
             """, (user_id, size, offset))
@@ -246,12 +246,11 @@ class SubscriptionService:
             )
     
     def delete_subscription(self, subscription_id: int, user_id: int = 1) -> bool:
-        """删除订阅"""
+        """删除订阅（真正删除记录）"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE user_subscriptions 
-                SET is_active = 0 
+                DELETE FROM user_subscriptions 
                 WHERE id = ? AND user_id = ?
             """, (subscription_id, user_id))
             

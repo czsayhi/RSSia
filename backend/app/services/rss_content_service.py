@@ -33,21 +33,10 @@ class RSSContentService:
         """
         self.timeout = timeout
         self.user_agent = user_agent or (
-            "RSS-Subscriber-Bot/1.0 "
-            "(RSS智能订阅器; https://github.com/user/rss-subscriber)"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
-        
-        # 配置请求头
-        self.headers = {
-            'User-Agent': self.user_agent,
-            'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache'
-        }
-        
-        # 集成新的共享内容服务
-        self.shared_service = SharedContentService()
-        
+        self.shared_content_service = SharedContentService()
         logger.info("🔧 RSS内容服务初始化完成（新架构）")
     
     async def fetch_and_store_rss_content(
@@ -84,7 +73,7 @@ class RSSContentService:
             rss_items = self._extract_and_standardize_entries(feed_data)
             
             # 第4步：使用新架构存储内容
-            result = await self.shared_service.store_rss_content(
+            result = await self.shared_content_service.store_rss_content(
                 rss_items=rss_items,
                 subscription_id=subscription_id,
                 user_id=user_id
@@ -160,28 +149,40 @@ class RSSContentService:
         logger.debug(f"📡 发送HTTP请求: {rss_url}")
         
         try:
-            # 修复中文编码问题的headers
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Accept-Charset': 'utf-8',
-                'Cache-Control': 'no-cache'
-            }
-            
             response = requests.get(
                 rss_url, 
-                headers=headers,
+                headers={'User-Agent': self.user_agent},
                 timeout=self.timeout,
                 allow_redirects=True
             )
             
-            # 检查HTTP状态码
-            if response.status_code == 200:
-                logger.debug(f"✅ HTTP请求成功: {response.status_code} | 内容长度: {len(response.content)}")
-                return response.content
+            # 优先检查内容而不是状态码（RSSHub可能返回403但包含有效内容）
+            content_length = len(response.content)
+            logger.debug(f"📊 HTTP响应: 状态码={response.status_code}, 内容长度={content_length}")
+            
+            # 检查是否有有效内容
+            if content_length > 0 and response.content:
+                # 尝试检测是否为有效的RSS/XML内容
+                try:
+                    content_str = response.content.decode('utf-8', errors='ignore')[:100].lower()
+                    if any(marker in content_str for marker in ['<?xml', '<rss', '<feed', '<channel>']):
+                        logger.debug(f"✅ 检测到有效RSS内容: 状态码={response.status_code}, 长度={content_length}")
+                        return response.content
+                except:
+                    pass
+            
+            # 特殊状态码处理
+            if response.status_code == 429:
+                logger.warning(f"⚠️ 触发限流 (429): {rss_url} - 建议增加请求间隔")
+                return None
+            elif response.status_code == 502:
+                logger.warning(f"⚠️ 服务器错误 (502): {rss_url} - RSSHub服务暂时不可用")
+                return None
+            elif response.status_code == 200:
+                logger.debug(f"✅ HTTP请求成功但内容为空: {response.status_code}")
+                return None
             else:
-                logger.warning(f"⚠️ HTTP请求返回非200状态: {response.status_code}")
+                logger.warning(f"⚠️ HTTP请求失败: 状态码={response.status_code}, 内容长度={content_length}")
                 return None
                 
         except requests.exceptions.Timeout:

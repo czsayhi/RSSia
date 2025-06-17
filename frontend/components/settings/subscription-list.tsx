@@ -17,33 +17,35 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useState } from "react"
+import { getPlatformLogo } from "@/lib/content-utils"
 
 export interface SubscriptionItem {
-  id: string // Unique ID for the subscription instance
-  source_id: string // ID of the source type (e.g., "bilibili_user_videos")
-  display_name: string // Display name of the source type
-  identifier: string // Specific identifier for this subscription (e.g., UID, keyword)
-  icon: string // Path to icon
-  platform: string
-  status: "open" | "closed" | "error" // Extend as needed
-  create_time: string
+  id: number // 后端: id (INTEGER)
+  template_id: string // 后端: template_id (STRING) 
+  template_name: string // 后端: template_name (STRING)
+  target_user_id: string // 后端: target_user_id (STRING)
+  platform: string // 后端: platform (STRING)
+  is_active: boolean // 后端: is_active (BOOLEAN)
+  created_at: string // 后端: created_at (TIMESTAMP)
+  custom_name?: string // 后端: custom_name (可选)
+  rss_url: string // 后端: rss_url (STRING)
 }
 
 interface SubscriptionListProps {
   subscriptions: SubscriptionItem[]
-  onDelete: (id: string) => void
-  onStatusChange: (id: string, newStatus: boolean) => void
+  onDelete: (id: number) => void
+  onStatusChange: (id: number, newStatus: boolean) => void
 }
 
 export default function SubscriptionList({ subscriptions, onDelete, onStatusChange }: SubscriptionListProps) {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState<{
-    id: string
+    id: number
     action: "subscribe" | "unsubscribe"
   } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  const handleSwitchChange = (id: string, checked: boolean) => {
+  const handleSwitchChange = (id: number, checked: boolean) => {
     setPendingAction({
       id,
       action: checked ? "subscribe" : "unsubscribe",
@@ -98,28 +100,28 @@ export default function SubscriptionList({ subscriptions, onDelete, onStatusChan
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <Image
-                      src={sub.icon || "/placeholder.svg"}
+                      src={getPlatformLogo(sub.platform) || "/placeholder.svg"}
                       alt={sub.platform}
                       width={24}
                       height={24}
                       className="h-6 w-6"
                     />
-                    <span className="font-medium">{sub.display_name}</span>
+                    <span className="font-medium">{sub.custom_name || sub.template_name}</span>
                   </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary" className="font-mono">
-                    {sub.identifier}
+                    {sub.target_user_id}
                   </Badge>
                 </TableCell>
                 <TableCell>
                   <Switch
-                    checked={sub.status === "open"}
+                    checked={sub.is_active}
                     onCheckedChange={(checked) => handleSwitchChange(sub.id, checked)}
                     aria-label="订阅状态开关"
                   />
                 </TableCell>
-                <TableCell>{sub.create_time}</TableCell>
+                <TableCell>{new Date(sub.created_at).toLocaleString()}</TableCell>
                 <TableCell className="text-right">
                   <Button
                     variant="ghost"
@@ -136,7 +138,7 @@ export default function SubscriptionList({ subscriptions, onDelete, onStatusChan
         </Table>
       </div>
       <AlertDialog open={confirmDialogOpen} onOpenChange={() => {}}>
-        <AlertDialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingAction?.action === "subscribe" ? "🚀 确认订阅？" : "⚠️ 确认取消订阅？"}

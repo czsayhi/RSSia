@@ -19,7 +19,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 
 from .fetch_config_service import FetchConfigService, FetchConfig, FrequencyType
-from .enhanced_rss_service import EnhancedRSSService
+from .fetch_limit_service import FetchLimitService
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -55,31 +55,19 @@ class AutoFetchScheduler:
     def __init__(self, db_path: str = "data/rss_subscriber.db"):
         self.db_path = db_path
         self.config_service = FetchConfigService(db_path)
-        self.rss_service = EnhancedRSSService()
+        self.limit_service = FetchLimitService(db_path)  # 统一使用FetchLimitService
         
         # 配置APScheduler
-        jobstores = {
-            'default': MemoryJobStore()
-        }
-        
-        executors = {
-            'default': ThreadPoolExecutor(max_workers=5)  # 最多5个并发拉取任务
-        }
-        
-        job_defaults = {
-            'coalesce': True,           # 合并错过的任务
-            'max_instances': 1,         # 每个任务最多1个实例
-            'misfire_grace_time': 300   # 任务错过5分钟内仍可执行
-        }
-        
         self.scheduler = BackgroundScheduler(
-            jobstores=jobstores,
-            executors=executors,
-            job_defaults=job_defaults,
+            jobstores={'default': MemoryJobStore()},
+            executors={'default': ThreadPoolExecutor(max_workers=10)},
+            job_defaults={'coalesce': True, 'max_instances': 3},
             timezone='Asia/Shanghai'
         )
         
-        # 确保数据目录存在
+        # 任务存储
+        self.tasks: Dict[str, FetchTask] = {}
+        
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
     
     def start(self):
@@ -163,48 +151,73 @@ class AutoFetchScheduler:
         logger.info(f"已调度用户 {config.user_id} 的自动拉取任务，执行时间: {scheduled_time}")
     
     def _execute_user_fetch(self, task_key: str):
-        """执行用户拉取任务"""
+        """执行用户拉取任务（统一版本）"""
+        task = self._get_task(task_key)
+        if not task:
+            logger.error(f"任务不存在: {task_key}")
+            return
+        
         try:
-            # 获取任务信息
-            task = self._get_task(task_key)
-            if not task or task.status != TaskStatus.PENDING:
-                return
+            # 更新任务状态为运行中
+            self._update_task_status(
+                task_key, 
+                TaskStatus.RUNNING,
+                executed_at=datetime.now(),
+                attempt_count=task.attempt_count + 1
+            )
             
-            # 更新任务状态为执行中
-            self._update_task_status(task_key, TaskStatus.RUNNING, executed_at=datetime.now())
+            user_id = task.user_id
+            logger.info(f"开始执行用户 {user_id} 的拉取任务: {task_key}")
             
-            # 检查用户是否还开启自动拉取
-            config = self.config_service.get_user_config(task.user_id)
+            # 1. 检查用户配置
+            config = self.config_service.get_user_config(user_id)
             if not config.auto_fetch_enabled:
-                self._update_task_status(task_key, TaskStatus.CANCELLED, error_message="用户已关闭自动拉取")
+                logger.info(f"用户 {user_id} 已关闭自动拉取")
+                self._update_task_status(task_key, TaskStatus.CANCELLED)
                 return
             
-            # 检查用户当日拉取次数限制
-            if not self._check_daily_limit(task.user_id, config.daily_limit):
+            # 2. 使用统一的FetchLimitService检查拉取权限
+            if not self.limit_service.check_can_fetch(user_id, 'auto'):
+                logger.warning(f"用户 {user_id} 已达到当日拉取次数限制")
                 self._update_task_status(task_key, TaskStatus.FAILED, error_message="已达到当日拉取次数限制")
                 return
             
-            # 执行拉取任务
-            success_count, total_count = self._perform_user_fetch(task.user_id)
+            # 3. 尝试消耗配额
+            attempt_result = self.limit_service.attempt_fetch(user_id, 'auto')
+            if not attempt_result.success:
+                logger.warning(f"用户 {user_id} 拉取配额不足: {attempt_result.message}")
+                self._update_task_status(task_key, TaskStatus.FAILED, error_message=attempt_result.message)
+                return
             
+            # 4. 执行拉取
+            success_count, total_count = self._perform_user_fetch(user_id)
+            
+            # 5. 使用统一的FetchLimitService记录结果
+            self.limit_service.record_fetch_result(user_id, 'auto', success_count > 0)
+            
+            # 6. 更新任务状态
             if success_count > 0:
-                # 任务成功
                 self._update_task_status(
                     task_key, 
                     TaskStatus.SUCCESS,
                     success_count=success_count,
                     total_count=total_count
                 )
-                # 记录拉取日志
-                self._record_fetch_log(task.user_id, 'auto', True)
-                logger.info(f"用户 {task.user_id} 自动拉取成功: {success_count}/{total_count}")
+                logger.info(f"用户 {user_id} 自动拉取成功: {success_count}/{total_count}")
             else:
-                # 任务失败，检查是否需要重试
-                self._handle_task_failure(task_key, "拉取失败，没有成功获取任何内容")
-                
+                self._update_task_status(
+                    task_key, 
+                    TaskStatus.FAILED,
+                    success_count=success_count,
+                    total_count=total_count,
+                    error_message="所有订阅源拉取失败"
+                )
+                logger.warning(f"用户 {user_id} 自动拉取失败: {success_count}/{total_count}")
+            
         except Exception as e:
-            logger.error(f"执行拉取任务 {task_key} 时出错: {e}")
-            self._handle_task_failure(task_key, str(e))
+            error_message = f"执行用户 {user_id} 拉取任务时出错: {e}"
+            logger.error(error_message)
+            self._handle_task_failure(task_key, error_message)
     
     def _handle_task_failure(self, task_key: str, error_message: str):
         """处理任务失败"""
@@ -257,38 +270,52 @@ class AutoFetchScheduler:
             logger.error(f"检查重试任务时出错: {e}")
     
     def _perform_user_fetch(self, user_id: int) -> tuple[int, int]:
-        """
-        执行用户的RSS拉取
-        
-        Returns:
-            tuple: (成功数量, 总数量)
-        """
+        """执行用户的RSS拉取"""
         try:
-            # 获取用户的所有活跃订阅
             from .subscription_service import SubscriptionService
+            from .rss_content_service import RSSContentService
+            
             subscription_service = SubscriptionService(self.db_path)
+            # 初始化RSS内容服务
+            rss_content_service = RSSContentService()
             
             # 这里需要获取用户订阅列表的方法
             subscriptions = subscription_service.get_user_subscriptions(user_id)
             total_count = len(subscriptions.subscriptions)
             success_count = 0
             
+            logger.info(f"开始自动拉取用户 {user_id} 的 {total_count} 个订阅源")
+            
             for subscription in subscriptions.subscriptions:
                 try:
-                    # 调用RSS服务拉取内容
-                    result = self.rss_service.fetch_and_process_rss(subscription.rss_url, user_id)
+                    # 检查订阅源是否处于活跃状态
+                    if not subscription.is_active:
+                        logger.debug(f"⏸️ 跳过非活跃订阅源: {subscription.custom_name or subscription.rss_url}")
+                        continue
+                    
+                    # 使用RSSContentService进行拉取
+                    import asyncio
+                    result = asyncio.run(rss_content_service.fetch_and_store_rss_content(
+                        subscription_id=subscription.id,
+                        rss_url=subscription.rss_url,
+                        user_id=user_id
+                    ))
+                    
                     if result.get('success', False):
                         success_count += 1
-                        # 更新订阅的最后更新时间
-                        self._update_subscription_last_update(subscription.id)
+                        logger.debug(f"✅ 自动拉取成功: {subscription.custom_name or subscription.rss_url}")
+                    else:
+                        logger.warning(f"⚠️ 自动拉取失败: {subscription.custom_name or subscription.rss_url}")
+                        
                 except Exception as e:
-                    logger.error(f"拉取订阅 {subscription.id} 失败: {e}")
+                    logger.error(f"❌ 自动拉取异常: {subscription.custom_name or subscription.rss_url} - {e}")
                     continue
             
+            logger.info(f"用户 {user_id} 自动拉取完成: {success_count}/{total_count}")
             return success_count, total_count
             
         except Exception as e:
-            logger.error(f"执行用户 {user_id} 拉取时出错: {e}")
+            logger.error(f"用户 {user_id} 自动拉取失败: {e}")
             return 0, 0
     
     def _update_subscription_last_update(self, subscription_id: int):
@@ -410,64 +437,9 @@ class AutoFetchScheduler:
             return [row[0] for row in cursor.fetchall()]
     
     def _check_daily_limit(self, user_id: int, daily_limit: int) -> bool:
-        """检查用户当日拉取次数是否超限"""
-        today = datetime.now().date()
-        
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT fetch_count
-                FROM user_fetch_logs
-                WHERE user_id = ? AND fetch_date = ?
-            """, (user_id, today))
-            
-            row = cursor.fetchone()
-            current_count = row[0] if row else 0
-            
-            return current_count < daily_limit
+        """检查用户当日拉取次数是否超限（使用统一服务）"""
+        return self.limit_service.check_can_fetch(user_id, 'auto')
     
     def _record_fetch_log(self, user_id: int, fetch_type: str, success: bool):
-        """记录拉取日志"""
-        today = datetime.now().date()
-        current_time = datetime.now()
-        
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # 尝试获取今日记录
-            cursor.execute("""
-                SELECT fetch_count, auto_fetch_count, manual_fetch_count
-                FROM user_fetch_logs
-                WHERE user_id = ? AND fetch_date = ?
-            """, (user_id, today))
-            
-            row = cursor.fetchone()
-            
-            if row:
-                # 更新现有记录
-                fetch_count = row[0] + 1
-                auto_fetch_count = row[1] + (1 if fetch_type == 'auto' else 0)
-                manual_fetch_count = row[2] + (1 if fetch_type == 'manual' else 0)
-                
-                cursor.execute("""
-                    UPDATE user_fetch_logs
-                    SET fetch_count = ?, auto_fetch_count = ?, manual_fetch_count = ?,
-                        last_fetch_at = ?, last_fetch_success = ?, updated_at = ?
-                    WHERE user_id = ? AND fetch_date = ?
-                """, (
-                    fetch_count, auto_fetch_count, manual_fetch_count,
-                    current_time, success, current_time, user_id, today
-                ))
-            else:
-                # 创建新记录
-                cursor.execute("""
-                    INSERT INTO user_fetch_logs
-                    (user_id, fetch_date, fetch_count, auto_fetch_count, manual_fetch_count,
-                     last_fetch_at, last_fetch_success)
-                    VALUES (?, ?, 1, ?, ?, ?, ?)
-                """, (
-                    user_id, today,
-                    1 if fetch_type == 'auto' else 0,
-                    1 if fetch_type == 'manual' else 0,
-                    current_time, success
-                )) 
+        """记录拉取日志（使用统一服务）"""
+        self.limit_service.record_fetch_result(user_id, fetch_type, success) 

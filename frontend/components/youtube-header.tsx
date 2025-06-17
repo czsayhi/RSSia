@@ -9,6 +9,8 @@ import { useState } from "react"
 import { cn } from "@/lib/utils"
 import SubscriptionAssistantCard from "./subscription-assistant-card"
 import TestDropdown from "./test-dropdown"
+import { useToast } from "@/hooks/use-toast"
+import { fetchConfigService } from "@/lib/services/fetchConfigService"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,11 +42,12 @@ interface YoutubeHeaderProps {
   onLogin: () => void
   onLogout: () => void
   showFilterTags?: boolean
+  onContentRefresh?: () => void  // 新增：内容刷新回调
 }
 
 function ThemeAwareLogo() {
-  const logoHeight = 28
-  const logoWidth = 110
+  const logoHeight = 36
+  const logoWidth = 140
 
   return (
     <>
@@ -70,27 +73,31 @@ function ThemeAwareLogo() {
   )
 }
 
-// 模拟手动更新订阅的API调用
-const updateSubscriptions = async (): Promise<{ success: boolean; message?: string }> => {
-  // 模拟网络延迟
-  await new Promise((resolve) => setTimeout(resolve, 2000))
-
-  // 模拟50%的概率达到更新上限
-  const reachedLimit = Math.random() > 0.5
-
-  if (reachedLimit) {
-    return { success: false, message: "已达到今日更新上限" }
-  } else {
-    return { success: true }
+// 手动更新订阅的API调用
+const updateSubscriptions = async (): Promise<{ success: boolean; message?: string; shouldRefreshContent?: boolean }> => {
+  try {
+    const result: any = await fetchConfigService.manualFetch()
+    return {
+      success: result.success,
+      message: result.message,
+      shouldRefreshContent: result.should_refresh_content || false
+    }
+  } catch (error) {
+    console.error('手动拉取失败:', error)
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : '拉取失败'
+    }
   }
 }
 
-export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilterTags = true }: YoutubeHeaderProps) {
+export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilterTags = true, onContentRefresh }: YoutubeHeaderProps) {
   const [activeTag, setActiveTag] = useState("全部")
   const [isAssistantOpen, setIsAssistantOpen] = useState(false)
   const [isUpdating, setIsUpdating] = useState(false)
   const [updateLimitDialogOpen, setUpdateLimitDialogOpen] = useState(false)
   const [showTooltip, setShowTooltip] = useState(false)
+  const { toast } = useToast()
 
   const openAssistant = () => setIsAssistantOpen(true)
 
@@ -99,13 +106,32 @@ export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilte
     try {
       const result = await updateSubscriptions()
       if (!result.success) {
-        setUpdateLimitDialogOpen(true)
+        // 检查是否是达到拉取次数限制
+        if (result.message?.includes('拉取次数限制') || result.message?.includes('更新上限')) {
+          setUpdateLimitDialogOpen(true)
+        } else {
+          // 其他拉取失败情况
+          toast({
+            title: "❌内容更新失败"
+          })
+        }
       } else {
-        // 成功更新，可以添加成功提示
-        console.log("订阅内容更新成功")
+        // 成功更新
+        toast({
+          title: "✅内容更新成功"
+        })
+        
+        // 如果有新内容且提供了刷新回调，则触发内容列表刷新
+        if (result.shouldRefreshContent && onContentRefresh) {
+          console.log('触发内容列表刷新')
+          onContentRefresh()
+        }
       }
     } catch (error) {
       console.error("更新订阅内容失败:", error)
+      toast({
+        title: "❌内容更新失败"
+      })
     } finally {
       setIsUpdating(false)
     }
@@ -238,7 +264,7 @@ export default function YoutubeHeader({ isLoggedIn, onLogin, onLogout, showFilte
 
       {/* 更新上限对话框 */}
       <AlertDialog open={updateLimitDialogOpen} onOpenChange={() => {}}>
-        <AlertDialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>🥲 已达到今日更新上限</AlertDialogTitle>
             <AlertDialogDescription>当前无法手动更新订阅内容，明天再来看看吧...</AlertDialogDescription>

@@ -17,6 +17,7 @@ export interface FormFieldSchema {
   placeholder?: string
   validation_regex?: string
   validation_message?: string
+  default_value?: string // 添加默认值支持
 }
 
 interface SourceConfigFormProps {
@@ -24,19 +25,29 @@ interface SourceConfigFormProps {
   schema: FormFieldSchema[]
   onSubmit: (formData: Record<string, string>) => void
   onCancel: () => void
+  parsedParams?: Record<string, string> // 添加解析参数支持
 }
 
-export default function SourceConfigForm({ sourceName, schema, onSubmit, onCancel }: SourceConfigFormProps) {
+export default function SourceConfigForm({ 
+  sourceName, 
+  schema, 
+  onSubmit, 
+  onCancel, 
+  parsedParams 
+}: SourceConfigFormProps) {
   const [formData, setFormData] = useState<Record<string, string>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const initialData: Record<string, string> = {}
     schema.forEach((field) => {
-      initialData[field.name] = ""
+      // 优先使用字段的default_value，然后是parsedParams，最后是空字符串
+      initialData[field.name] = field.default_value || 
+                               (parsedParams && parsedParams[field.name]) || 
+                               ""
     })
     setFormData(initialData)
-  }, [schema])
+  }, [schema, parsedParams])
 
   const handleChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -79,7 +90,9 @@ export default function SourceConfigForm({ sourceName, schema, onSubmit, onCance
     <Card>
       <CardHeader>
         <CardTitle>{sourceName}</CardTitle>
-        <CardDescription>请填写以下信息以完成订阅配置。</CardDescription>
+        <CardDescription>
+          请填写以下信息以完成订阅配置。
+        </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-6">

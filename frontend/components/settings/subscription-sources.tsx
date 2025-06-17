@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useToast } from "@/hooks/use-toast"
 import SourceSearchInput, { type SearchResult } from "./source-search-input"
 import SourceConfigForm, { type FormFieldSchema } from "./source-config-form"
 import SubscriptionList, { type SubscriptionItem } from "./subscription-list"
@@ -14,129 +15,181 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-
-// 注意：这里的搜索结果是mock数据，实际应该由后端提供
-const mockSearchResults: SearchResult[] = [
-  {
-    id: "bilibili_user_videos",
-    display_name: "哔哩哔哩 - UP主视频订阅",
-    description: "订阅B站UP主的最新视频投稿，及时获取更新通知",
-    icon: "/icons/bilibili.svg",
-    platform: "bilibili",
-  },
-  {
-    id: "weibo_keyword_search",
-    display_name: "微博 - 关键词搜索",
-    description: "搜索包含特定关键词的微博内容，追踪热门话题",
-    icon: "/icons/weibo.svg",
-    platform: "weibo",
-  },
-]
-
-// Mock data for form schema (as provided by user for Bilibili UID)
-const mockBilibiliFormSchema: FormFieldSchema[] = [
-  {
-    name: "uid",
-    display_name: "UP主UID",
-    description: "B站UP主的用户ID，可在个人主页URL中找到",
-    type: "string",
-    required: true,
-    placeholder: "297572288",
-    validation_regex: "^[0-9]+$",
-    validation_message: "请输入纯数字的用户ID",
-  },
-]
-
-// Mock data for existing subscriptions
-const mockInitialSubscriptions: SubscriptionItem[] = [
-  {
-    id: "sub1",
-    source_id: "bilibili_user_videos",
-    display_name: "哔哩哔哩 - UP主视频订阅",
-    identifier: "297572288",
-    icon: "/icons/bilibili.svg",
-    platform: "bilibili",
-    status: "open",
-    create_time: "2025-01-15 15:30",
-  },
-]
+import {
+  getUserSubscriptions,
+  createSubscription,
+  deleteSubscription,
+  updateSubscriptionStatus,
+  searchSubscriptionSources,
+  type SubscriptionTemplate,
+  type SubscriptionCreateRequest
+} from "@/lib/api"
 
 export default function SubscriptionSources() {
-  const [selectedSource, setSelectedSource] = useState<SearchResult | null>(null)
-  const [formSchema, setFormSchema] = useState<FormFieldSchema[] | null>(null)
-  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>(mockInitialSubscriptions)
+  const { toast } = useToast()
+  const [selectedSource, setSelectedSource] = useState<SubscriptionTemplate | null>(null)
+  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([])
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [subscriptionToDelete, setSubscriptionToDelete] = useState<string | null>(null)
+  const [subscriptionToDelete, setSubscriptionToDelete] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [searchResults, setSearchResults] = useState<SubscriptionTemplate[]>([])
 
-  const handleSearchSelect = (source: SearchResult) => {
-    setSelectedSource(source)
-    // 注意：实际应该调用后端API获取对应的表单schema
-    if (source.id === "bilibili_user_videos") {
-      setFormSchema(mockBilibiliFormSchema)
-    } else {
-      // Placeholder for other schemas
-      setFormSchema([
-        {
-          name: "query",
-          display_name: "关键词",
-          description: "请输入要搜索的关键词",
-          type: "string",
-          required: true,
-          placeholder: "例如：人工智能",
-        },
-      ])
+  // 加载用户订阅列表
+  const loadSubscriptions = async () => {
+    try {
+      setLoading(true)
+      const response = await getUserSubscriptions()
+      setSubscriptions(response.subscriptions)
+    } catch (error) {
+      console.error('加载订阅列表失败:', error)
+      toast({
+        title: "加载失败",
+        description: error instanceof Error ? error.message : "无法加载订阅列表",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleFormSubmit = (formData: Record<string, string>) => {
-    console.log("Form submitted:", formData, "for source:", selectedSource)
+  // 组件挂载时加载数据
+  useEffect(() => {
+    loadSubscriptions()
+  }, [])
+
+  // 处理搜索
+  const handleSearch = async (query: string): Promise<SearchResult[]> => {
+    try {
+      const templates = await searchSubscriptionSources(query)
+      setSearchResults(templates)
+      
+      // 转换为SearchResult格式
+      return templates.map(template => ({
+        id: template.template_id,
+        display_name: template.template_name,
+        description: template.description,
+        icon: `/icons/${template.platform}.svg`,
+        platform: template.platform,
+      }))
+    } catch (error) {
+      console.error('搜索失败:', error)
+      return []
+    }
+  }
+
+  const handleSearchSelect = (source: SearchResult) => {
+    // 从搜索结果中找到对应的模板
+    const template = searchResults.find(t => t.template_id === source.id)
+    if (template) {
+      setSelectedSource(template)
+      
+      // 移除自动解析参数的toast提示，因为用户可以直接看到表单中的自动填充
+    }
+  }
+
+  const handleFormSubmit = async (formData: Record<string, string>) => {
     if (!selectedSource) return
 
-    // 模拟添加到列表
-    const newSubscription: SubscriptionItem = {
-      id: `sub${Date.now()}`,
-      source_id: selectedSource.id,
-      display_name: selectedSource.display_name,
-      identifier: formData.uid || formData.query || "N/A",
-      icon: selectedSource.icon,
-      platform: selectedSource.platform,
-      status: "open",
-      create_time: new Date().toLocaleString(),
-    }
-    setSubscriptions((prev) => [...prev, newSubscription])
+    try {
+      const request: SubscriptionCreateRequest = {
+        template_id: selectedSource.template_id,
+        parameters: formData,
+        custom_name: formData.custom_name,
+      }
 
-    // 模拟成功：关闭表单
+      const newSubscription = await createSubscription(request)
+      setSubscriptions(prev => [...prev, newSubscription])
     setSelectedSource(null)
-    setFormSchema(null)
-    alert("订阅添加成功！") // Replace with toast later
+      
+      toast({
+        title: "添加订阅成功",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error('创建订阅失败:', error)
+      toast({
+        title: "添加订阅失败",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleFormCancel = () => {
     setSelectedSource(null)
-    setFormSchema(null)
   }
 
-  const handleDeleteSubscription = (id: string) => {
+  const handleDeleteSubscription = (id: number) => {
     setSubscriptionToDelete(id)
     setDeleteDialogOpen(true)
   }
 
-  const confirmDeleteSubscription = () => {
-    if (subscriptionToDelete) {
-      // 模拟后端删除
-      setSubscriptions((prev) => prev.filter((sub) => sub.id !== subscriptionToDelete))
-      console.log(`Subscription ${subscriptionToDelete} deleted`)
-    }
+  const confirmDeleteSubscription = async () => {
+    if (subscriptionToDelete === null) return
+
+    try {
+      await deleteSubscription(subscriptionToDelete)
+      setSubscriptions(prev => prev.filter(sub => sub.id !== subscriptionToDelete))
+      
+      toast({
+        title: "删除订阅成功",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error('删除订阅失败:', error)
+      toast({
+        title: "删除订阅失败",
+        variant: "destructive",
+      })
+    } finally {
     setDeleteDialogOpen(false)
     setSubscriptionToDelete(null)
   }
+  }
 
-  const handleStatusChange = (id: string, newStatus: boolean) => {
-    setSubscriptions((prev) =>
-      prev.map((sub) => (sub.id === id ? { ...sub, status: newStatus ? "open" : "closed" } : sub)),
+  const handleStatusChange = async (id: number, newStatus: boolean) => {
+    try {
+      await updateSubscriptionStatus(id, newStatus)
+      setSubscriptions(prev =>
+        prev.map(sub => sub.id === id ? { ...sub, is_active: newStatus } : sub)
+      )
+      
+      toast({
+        title: newStatus ? "订阅已开启" : "订阅已关闭",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error('更新订阅状态失败:', error)
+      toast({
+        title: "更新失败",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // 将SubscriptionTemplate转换为FormFieldSchema
+  const getFormSchema = (template: SubscriptionTemplate): FormFieldSchema[] => {
+    return template.parameters.map(param => ({
+      name: param.name,
+      display_name: param.display_name,
+      description: param.description,
+      type: param.type as "string" | "number" | "boolean", // 类型断言
+      required: param.required,
+      placeholder: param.placeholder,
+      validation_regex: param.validation_regex,
+      validation_message: param.validation_message,
+      default_value: param.default_value, // 传递默认值
+    }))
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">加载订阅列表中...</p>
+        </div>
+      </div>
     )
-    // 模拟后端更新
-    console.log(`Subscription ${id} status changed to ${newStatus ? "open" : "closed"}`)
   }
 
   return (
@@ -145,14 +198,15 @@ export default function SubscriptionSources() {
         <div className="text-center pt-8 pb-4">
           <h2 className="text-3xl font-bold tracking-tight">👀 搜索订阅源</h2>
         </div>
-        <SourceSearchInput onSelect={handleSearchSelect} mockResults={mockSearchResults} />
-        {selectedSource && formSchema && (
+        <SourceSearchInput onSelect={handleSearchSelect} onSearch={handleSearch} />
+        {selectedSource && (
           <SourceConfigForm
-            key={selectedSource.id}
-            sourceName={selectedSource.display_name}
-            schema={formSchema}
+            key={selectedSource.template_id}
+            sourceName={selectedSource.template_name}
+            schema={getFormSchema(selectedSource)}
             onSubmit={handleFormSubmit}
             onCancel={handleFormCancel}
+            parsedParams={selectedSource.parsed_params} // 传递解析参数
           />
         )}
         <SubscriptionList

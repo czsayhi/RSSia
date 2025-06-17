@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import VideoCard from "./video-card"
 import ContentDetailModal from "./content-detail-modal"
 import type { ContentCardItem } from "@/types/content"
@@ -34,10 +34,23 @@ const placeholderItems: ContentCardItem[] = Array(12)
     content_type: (["video", "image_text", "text"] as const)[i % 3],
   }))
 
-export default function VideoGrid() {
+interface VideoGridProps {
+  refreshTrigger?: number  // 刷新触发器
+}
+
+export default function VideoGrid({ refreshTrigger }: VideoGridProps) {
   const [selectedContentId, setSelectedContentId] = useState<number | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [hasContent] = useState(true) // 模拟是否有内容，可以改为false测试兜底样式
+
+  // 监听刷新触发器，重新获取内容
+  useEffect(() => {
+    if (refreshTrigger) {
+      console.log('VideoGrid: 接收到刷新信号，重新获取内容', refreshTrigger)
+      // TODO: 这里添加实际的内容获取逻辑
+      // 例如：fetchUserContent()
+    }
+  }, [refreshTrigger])
 
   const handleCardClick = (contentId: number) => {
     setSelectedContentId(contentId)

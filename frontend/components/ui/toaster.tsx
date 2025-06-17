@@ -3,7 +3,6 @@
 import { useToast } from "@/hooks/use-toast"
 import {
   Toast,
-  ToastClose,
   ToastDescription,
   ToastProvider,
   ToastTitle,
@@ -18,14 +17,13 @@ export function Toaster() {
       {toasts.map(function ({ id, title, description, action, ...props }) {
         return (
           <Toast key={id} {...props}>
-            <div className="grid gap-1">
+            <div className="flex flex-col justify-center w-full h-full px-3 py-1">
               {title && <ToastTitle>{title}</ToastTitle>}
               {description && (
                 <ToastDescription>{description}</ToastDescription>
               )}
             </div>
             {action}
-            <ToastClose />
           </Toast>
         )
       })}
