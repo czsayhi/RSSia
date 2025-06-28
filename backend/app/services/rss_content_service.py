@@ -2,12 +2,14 @@
 """
 RSS内容拉取和处理服务
 负责RSS内容的拉取、解析、处理、存储等核心功能
-已升级为使用新的共享内容存储架构
+v3.0: 简化架构，使用自建RSShub实例，移除复杂重试逻辑
+v3.1: 增加内容时间范围控制，只获取指定天数内的内容
 """
 
-import hashlib
 import re
-from datetime import datetime
+import time
+import random
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 from urllib.parse import urlparse
 
@@ -16,28 +18,59 @@ import requests
 from bs4 import BeautifulSoup
 from loguru import logger
 
-from app.models.subscription import RSSContent
 from .shared_content_service import SharedContentService
 
 
 class RSSContentService:
-    """RSS内容处理服务（已升级为新架构）"""
+    """RSS内容处理服务（v3.1 - 增加时间控制）"""
     
-    def __init__(self, timeout: int = 15, user_agent: str = None):
+    def __init__(
+        self, 
+        timeout: int = 15, 
+        rsshub_base_url: str = None,
+        content_time_range_days: int = 30,
+        test_mode: bool = False,
+        test_limit: int = 1
+    ):
         """
         初始化RSS内容服务
         
         Args:
-            timeout: HTTP请求超时时间(秒)
-            user_agent: 用户代理字符串
+            timeout: HTTP请求超时时间(秒) 
+            rsshub_base_url: 自建RSShub实例地址
+            content_time_range_days: 内容时间范围（天），只获取此范围内的内容
+            test_mode: 测试模式，启用后将限制拉取内容数量
+            test_limit: 测试模式下的最大内容数量
         """
         self.timeout = timeout
-        self.user_agent = user_agent or (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        )
+        
+        # 简化的User-Agent
+        self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        # 自建RSShub实例配置
+        self.rsshub_base_url = rsshub_base_url or "http://rssia-hub:1200"
+        
+        # 内容时间范围控制
+        self.content_time_range_days = content_time_range_days
+        self.time_cutoff = datetime.now() - timedelta(days=content_time_range_days)
+        
+        # 测试模式配置
+        self.test_mode = test_mode
+        self.test_limit = test_limit
+        
+        # 简化的重试配置
+        self.retry_config = {
+            'max_retries': 2,          # 减少到2次重试
+            'base_delay': 1,           # 1秒基础延迟
+        }
+        
         self.shared_content_service = SharedContentService()
-        logger.info("🔧 RSS内容服务初始化完成（新架构）")
+        logger.info(
+            f"🔧 RSS内容服务初始化完成（v3.1 - 时间控制版）- "
+            f"RSShub: {self.rsshub_base_url}, "
+            f"时间范围: {content_time_range_days}天, "
+            f"测试模式: {'开启(限制'+str(test_limit)+'条)' if test_mode else '关闭'}"
+        )
     
     async def fetch_and_store_rss_content(
         self, 
@@ -46,7 +79,7 @@ class RSSContentService:
         user_id: int
     ) -> Dict[str, Any]:
         """
-        拉取和存储RSS内容的主入口方法（新架构）
+        拉取和存储RSS内容的主入口方法（简化版）
         
         Args:
             rss_url: RSS订阅URL
@@ -79,11 +112,18 @@ class RSSContentService:
                 user_id=user_id
             )
             
+            # 🔥 第5步：AI预处理 - 基于AI字段是否为空
+            need_ai_processing_ids = result.get('need_ai_processing_ids', [])
+            if need_ai_processing_ids:
+                ai_result = await self._trigger_ai_processing(need_ai_processing_ids, user_id, subscription_id)
+                result['ai_processing'] = ai_result
+            
             logger.success(
                 f"✅ RSS内容处理完成: {rss_url} | "
                 f"处理{result.get('total_processed', 0)}条，"
                 f"新增{result.get('new_content', 0)}条，"
-                f"复用{result.get('reused_content', 0)}条"
+                f"复用{result.get('reused_content', 0)}条，"
+                f"AI处理{result.get('ai_processing', {}).get('processed', 0)}条"
             )
             
             return result
@@ -92,53 +132,93 @@ class RSSContentService:
             logger.error(f"❌ RSS内容拉取失败: {rss_url} | 错误: {e}")
             return {'error': str(e)}
     
-    def fetch_rss_content(self, rss_url: str, subscription_id: int) -> List[RSSContent]:
+    async def _trigger_ai_processing(
+        self, 
+        need_ai_processing_ids: List[int], 
+        user_id: int,
+        subscription_id: int
+    ) -> Dict[str, Any]:
         """
-        向后兼容方法：返回旧格式的RSSContent列表
+        第5步：触发AI预处理（基于AI字段是否为空）
         
         Args:
-            rss_url: RSS订阅URL
+            need_ai_processing_ids: 需要AI处理的内容ID列表（新内容+缺少AI结果的旧内容）
+            user_id: 用户ID
             subscription_id: 订阅ID
             
         Returns:
-            List[RSSContent]: 解析后的RSS内容列表（兼容格式）
+            Dict: AI处理结果统计
         """
-        logger.info(f"🚀 开始拉取RSS内容（兼容模式）: {rss_url}")
-        
         try:
-            # 第1步：发送HTTP请求拉取RSS原始数据
-            raw_content = self._fetch_raw_rss(rss_url)
-            if not raw_content:
-                return []
+            logger.info(f"🧠 开始AI预处理: {len(need_ai_processing_ids)}条需要处理的内容, user_id={user_id}")
             
-            # 第2步：使用feedparser解析RSS/Atom内容
-            feed_data = self._parse_rss_feed(raw_content)
-            if not feed_data:
-                return []
+            # 从数据库读取需要AI处理的内容
+            db_contents = await self.shared_content_service.get_contents_by_ids(need_ai_processing_ids)
+            if not db_contents:
+                logger.warning("⚠️ 无法从数据库读取需要处理的内容")
+                return {'processed': 0, 'success': 0, 'failed': 0}
             
-            # 第3步：提取并清洗内容数据（兼容格式）
-            rss_entries = self._extract_entries_legacy(feed_data, subscription_id)
+            # 导入AI内容处理器
+            from .ai_content_processor import ai_content_processor
+            from ..models.content import RSSContent
             
-            # 第4步：内容去重和验证
-            unique_entries = self._deduplicate_content(rss_entries)
+            # 从数据库记录创建RSSContent对象（包含content_id信息）
+            rss_content_objects = []
+            for db_content in db_contents:
+                try:
+                    # 基于数据库记录创建RSSContent对象 - 包含所有标准字段
+                    rss_content = RSSContent(
+                        content_id=db_content['content_id'],  # 🔥 关键：包含content_id
+                        subscription_id=subscription_id,
+                        content_hash=db_content['content_hash'],
+                        title=db_content['title'],
+                        original_link=db_content['original_link'],
+                        published_at=db_content['published_at'],
+                        description=db_content['description'],
+                        description_text=db_content['description_text'],
+                        author=db_content['author'],
+                        platform=db_content['platform'],
+                        feed_title=db_content['feed_title'],
+                        cover_image=db_content['cover_image'],
+                        content_type=db_content['content_type']
+                    )
+                    rss_content_objects.append(rss_content)
+                except Exception as e:
+                    logger.warning(f"⚠️ 数据库内容转换失败，跳过: {db_content.get('title', 'Unknown')[:30]}... | 错误: {e}")
+                    continue
             
-            # 第5步：智能内容处理（摘要生成、标签提取）
-            processed_entries = self._process_content_intelligence(unique_entries)
+            if not rss_content_objects:
+                logger.warning("⚠️ 没有有效的内容可供AI处理")
+                return {'processed': 0, 'success': 0, 'failed': 0}
             
-            logger.success(
-                f"✅ RSS内容拉取完成（兼容模式）: {rss_url} | "
-                f"原始{len(feed_data.entries)}条 → 处理后{len(processed_entries)}条"
-            )
+            # 调用AI内容处理器
+            processed_entries = await ai_content_processor.process_content_intelligence(rss_content_objects)
             
-            return processed_entries
+            # 统计处理结果
+            result = {
+                'processed': len(rss_content_objects),
+                'success': len(processed_entries),
+                'failed': len(rss_content_objects) - len(processed_entries),
+                'success_rate': round(len(processed_entries) / len(rss_content_objects) * 100, 1) if rss_content_objects else 0
+            }
+            
+            logger.success(f"✅ AI预处理完成: {result}")
+            return result
             
         except Exception as e:
-            logger.error(f"❌ RSS内容拉取失败: {rss_url} | 错误: {e}")
-            return []
+            logger.error(f"❌ AI预处理失败: {e}")
+            # AI处理失败不影响主流程，返回失败统计
+            return {
+                'processed': len(need_ai_processing_ids),
+                'success': 0,
+                'failed': len(need_ai_processing_ids),
+                'error': str(e)
+            }
     
     def _fetch_raw_rss(self, rss_url: str) -> Optional[bytes]:
         """
-        第1步：拉取RSS原始数据
+        第1步：拉取RSS原始数据（v3.0 - 简化版本）
+        移除多实例轮换，使用自建RSShub实例
         
         Args:
             rss_url: RSS URL
@@ -146,54 +226,50 @@ class RSSContentService:
         Returns:
             Optional[bytes]: RSS原始内容字节数据
         """
-        logger.debug(f"📡 发送HTTP请求: {rss_url}")
+        logger.debug(f"📡 开始拉取RSS: {rss_url}")
         
-        try:
-            response = requests.get(
-                rss_url, 
-                headers={'User-Agent': self.user_agent},
-                timeout=self.timeout,
-                allow_redirects=True
-            )
-            
-            # 优先检查内容而不是状态码（RSSHub可能返回403但包含有效内容）
-            content_length = len(response.content)
-            logger.debug(f"📊 HTTP响应: 状态码={response.status_code}, 内容长度={content_length}")
-            
-            # 检查是否有有效内容
-            if content_length > 0 and response.content:
-                # 尝试检测是否为有效的RSS/XML内容
-                try:
-                    content_str = response.content.decode('utf-8', errors='ignore')[:100].lower()
-                    if any(marker in content_str for marker in ['<?xml', '<rss', '<feed', '<channel>']):
-                        logger.debug(f"✅ 检测到有效RSS内容: 状态码={response.status_code}, 长度={content_length}")
-                        return response.content
-                except:
-                    pass
-            
-            # 特殊状态码处理
-            if response.status_code == 429:
-                logger.warning(f"⚠️ 触发限流 (429): {rss_url} - 建议增加请求间隔")
-                return None
-            elif response.status_code == 502:
-                logger.warning(f"⚠️ 服务器错误 (502): {rss_url} - RSSHub服务暂时不可用")
-                return None
-            elif response.status_code == 200:
-                logger.debug(f"✅ HTTP请求成功但内容为空: {response.status_code}")
-                return None
-            else:
-                logger.warning(f"⚠️ HTTP请求失败: 状态码={response.status_code}, 内容长度={content_length}")
-                return None
+        # 构建完整URL
+        if rss_url.startswith('http'):
+            final_url = rss_url
+        else:
+            final_url = f"{self.rsshub_base_url}{rss_url}"
+        
+        # 简化的重试逻辑
+        for attempt in range(self.retry_config['max_retries'] + 1):
+            try:
+                # 简化的请求头
+                headers = {
+                    'User-Agent': self.user_agent,
+                    'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+                }
                 
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ HTTP请求超时: {rss_url}")
-            return None
-        except requests.exceptions.ConnectionError:
-            logger.error(f"❌ HTTP连接错误: {rss_url}")
-            return None
-        except Exception as e:
-            logger.error(f"❌ HTTP请求异常: {rss_url} | {e}")
-            return None
+                if attempt > 0:
+                    time.sleep(self.retry_config['base_delay'] * attempt)
+                
+                logger.debug(f"🔄 尝试 {attempt + 1}/{self.retry_config['max_retries'] + 1}: {final_url}")
+                
+                response = requests.get(
+                    final_url,
+                    headers=headers,
+                    timeout=self.timeout,
+                    allow_redirects=True
+                )
+                
+                response.raise_for_status()
+                
+                if response.content:
+                    logger.success(f"✅ 成功获取RSS内容，大小: {len(response.content)} bytes")
+                    return response.content
+                else:
+                    logger.warning("⚠️ 响应内容为空")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"⚠️ 请求失败 (尝试{attempt + 1}): {e}")
+                if attempt == self.retry_config['max_retries']:
+                    logger.error(f"❌ 所有重试尝试失败: {final_url}")
+                    
+        return None
     
     def _parse_rss_feed(self, raw_content: bytes) -> Optional[feedparser.FeedParserDict]:
         """
@@ -229,17 +305,18 @@ class RSSContentService:
     
     def _extract_and_standardize_entries(self, feed: feedparser.FeedParserDict) -> List[Dict[str, Any]]:
         """
-        第3步：提取并标准化RSS条目数据（新架构）
+        第3步：提取并标准化RSS条目数据（v3.1 - 增加时间过滤）
         
         Args:
             feed: feedparser解析结果
             
         Returns:
-            List[Dict]: 标准化的RSS内容列表
+            List[Dict]: 标准化的RSS内容列表（只包含时间范围内的内容）
         """
-        logger.debug(f"📝 开始提取RSS条目数据（新架构），共{len(feed.entries)}条")
+        logger.debug(f"📝 开始提取RSS条目数据（时间范围: {self.content_time_range_days}天），共{len(feed.entries)}条")
         
         rss_items = []
+        filtered_count = 0
         
         # 提取Feed级别信息
         feed_info = {
@@ -253,12 +330,18 @@ class RSSContentService:
         
         for entry in feed.entries:
             try:
+                # 处理发布时间
+                published_at = self._parse_publish_date(entry)
+                
+                # 🔥 时间范围过滤：只保留指定天数内的内容
+                if published_at < self.time_cutoff:
+                    filtered_count += 1
+                    logger.debug(f"⏰ 过滤旧内容: {entry.get('title', '')[:30]}... (发布时间: {published_at.strftime('%Y-%m-%d')})")
+                    continue
+                
                 # 提取基础字段
                 title = self._clean_text(entry.get('title', '无标题'))
                 original_link = entry.get('link', '')
-                
-                # 处理发布时间
-                published_at = self._parse_publish_date(entry)
                 
                 # 提取和清洗描述内容
                 description = self._extract_description(entry)
@@ -297,66 +380,22 @@ class RSSContentService:
                 }
                 
                 rss_items.append(rss_item)
-                logger.debug(f"📄 提取条目: {title[:50]}...")
+                logger.debug(f"📄 提取条目: {title[:50]}... (发布时间: {published_at.strftime('%Y-%m-%d %H:%M')})")
+                
+                # 🧪 测试模式：限制内容数量
+                if self.test_mode and len(rss_items) >= self.test_limit:
+                    logger.info(f"🧪 测试模式：已达到限制数量({self.test_limit}条)，停止提取")
+                    break
                 
             except Exception as e:
                 logger.warning(f"⚠️ 条目提取失败: {e}")
                 continue
         
-        logger.debug(f"✅ 条目提取完成（新架构）: {len(rss_items)}条")
+        logger.success(
+            f"✅ 条目提取完成{'（测试模式）' if self.test_mode else '（时间控制版）'}: "
+            f"保留{len(rss_items)}条，过滤{filtered_count}条旧内容"
+        )
         return rss_items
-    
-    def _extract_entries_legacy(self, feed: feedparser.FeedParserDict, subscription_id: int) -> List[RSSContent]:
-        """
-        第3步：提取并清洗RSS条目数据（兼容模式）
-        
-        Args:
-            feed: feedparser解析结果
-            subscription_id: 订阅ID
-            
-        Returns:
-            List[RSSContent]: 提取的RSS内容列表
-        """
-        logger.debug(f"📝 开始提取RSS条目数据（兼容模式），共{len(feed.entries)}条")
-        
-        rss_entries = []
-        
-        for entry in feed.entries:
-            try:
-                # 提取基础字段
-                title = self._clean_text(entry.get('title', '无标题'))
-                link = entry.get('link', '')
-                
-                # 处理发布时间
-                pub_date = self._parse_publish_date(entry)
-                
-                # 提取和清洗描述内容
-                description = self._extract_description(entry)
-                
-                # 生成内容哈希用于去重
-                content_hash = self._generate_content_hash(title, link, description)
-                
-                # 创建RSSContent对象
-                rss_content = RSSContent(
-                    subscription_id=subscription_id,
-                    title=title,
-                    link=link,
-                    description=description,
-                    pub_date=pub_date,
-                    content_hash=content_hash,
-                    is_read=False,
-                    created_at=datetime.now()
-                )
-                
-                rss_entries.append(rss_content)
-                logger.debug(f"📄 提取条目: {title[:50]}...")
-                
-            except Exception as e:
-                logger.warning(f"⚠️ 条目提取失败: {e}")
-                continue
-        
-        logger.debug(f"✅ 条目提取完成（兼容模式）: {len(rss_entries)}条")
-        return rss_entries
     
     def _extract_author_with_fallback(self, entry: feedparser.util.FeedParserDict, feed_title: str) -> Optional[str]:
         """
@@ -572,214 +611,4 @@ class RSSContentService:
         
         return "无描述内容"
     
-    def _generate_content_hash(self, title: str, link: str, description: str) -> str:
-        """
-        生成内容哈希值用于去重
-        
-        Args:
-            title: 标题
-            link: 链接
-            description: 描述
-            
-        Returns:
-            str: MD5哈希值
-        """
-        content = f"{title}{link}{description}"
-        return hashlib.md5(content.encode('utf-8')).hexdigest()
-    
-    def _deduplicate_content(self, entries: List[RSSContent]) -> List[RSSContent]:
-        """
-        第4步：内容去重
-        
-        Args:
-            entries: RSS内容列表
-            
-        Returns:
-            List[RSSContent]: 去重后的内容列表
-        """
-        seen_hashes = set()
-        unique_entries = []
-        
-        for entry in entries:
-            if entry.content_hash not in seen_hashes:
-                seen_hashes.add(entry.content_hash)
-                unique_entries.append(entry)
-            else:
-                logger.debug(f"🔄 重复内容已过滤: {entry.title[:50]}...")
-        
-        logger.debug(f"✅ 去重完成: {len(entries)}条 → {len(unique_entries)}条")
-        return unique_entries
-    
-    def _process_content_intelligence(self, entries: List[RSSContent]) -> List[RSSContent]:
-        """
-        第5步：智能内容处理（摘要生成、标签提取）
-        
-        Args:
-            entries: RSS内容列表
-            
-        Returns:
-            List[RSSContent]: 智能处理后的内容列表
-        """
-        logger.debug(f"🧠 开始智能内容处理，共{len(entries)}条")
-        
-        processed_entries = []
-        
-        for entry in entries:
-            try:
-                # 生成智能摘要（目前使用规则，未来可接入LLM）
-                entry.smart_summary = self._generate_summary(entry.title, entry.description)
-                
-                # 提取智能标签（目前使用规则，未来可接入LLM）
-                entry.tags = self._extract_tags(entry.title, entry.description)
-                
-                # 识别平台信息
-                entry.platform = self._detect_platform(entry.link)
-                
-                processed_entries.append(entry)
-                
-            except Exception as e:
-                logger.warning(f"⚠️ 智能处理失败: {e}")
-                # 即使智能处理失败，也保留原始内容
-                processed_entries.append(entry)
-        
-        logger.debug(f"✅ 智能处理完成: {len(processed_entries)}条")
-        return processed_entries
-    
-    def _generate_summary(self, title: str, description: str) -> str:
-        """
-        生成智能摘要（简化版规则，未来可接入LLM）
-        
-        Args:
-            title: 标题
-            description: 描述
-            
-        Returns:
-            str: 生成的摘要
-        """
-        # 简化摘要生成逻辑
-        if len(description) <= 100:
-            return description
-        
-        # 取前80个字符作为摘要
-        summary = description[:80].rstrip()
-        
-        # 避免在句子中间截断
-        if not summary.endswith(('。', '！', '？', '.', '!', '?')):
-            last_punct = max(
-                summary.rfind('。'), summary.rfind('！'), 
-                summary.rfind('？'), summary.rfind('.')
-            )
-            if last_punct > 30:  # 确保摘要不会太短
-                summary = summary[:last_punct + 1]
-        
-        return summary + "..."
-    
-    def _extract_tags(self, title: str, description: str) -> List[str]:
-        """
-        提取智能标签（简化版规则，未来可接入LLM）
-        
-        Args:
-            title: 标题
-            description: 描述
-            
-        Returns:
-            List[str]: 标签列表
-        """
-        tags = []
-        content = f"{title} {description}".lower()
-        
-        # 技术相关标签
-        tech_keywords = {
-            'python': 'Python',
-            'javascript': 'JavaScript', 
-            'react': 'React',
-            'vue': 'Vue',
-            'docker': 'Docker',
-            'kubernetes': 'Kubernetes',
-            'ai': 'AI',
-            '人工智能': 'AI',
-            '机器学习': '机器学习',
-            '深度学习': '深度学习'
-        }
-        
-        for keyword, tag in tech_keywords.items():
-            if keyword in content:
-                tags.append(tag)
-        
-        # 平台相关标签
-        if 'bilibili' in content or '哔哩哔哩' in content:
-            tags.append('B站')
-        if 'github' in content:
-            tags.append('GitHub')
-        if 'weibo' in content or '微博' in content:
-            tags.append('微博')
-        
-        return list(set(tags))  # 去重
-    
-    def _detect_platform(self, link: str) -> str:
-        """
-        从链接检测平台信息
-        
-        Args:
-            link: 内容链接
-            
-        Returns:
-            str: 平台名称
-        """
-        if not link:
-            return "unknown"
-        
-        domain = urlparse(link).netloc.lower()
-        
-        platform_mapping = {
-            'bilibili.com': 'bilibili',
-            'weibo.com': 'weibo', 
-            'github.com': 'github',
-            'juejin.cn': 'juejin',
-            'zhihu.com': 'zhihu',
-            'v2ex.com': 'v2ex'
-        }
-        
-        for domain_key, platform in platform_mapping.items():
-            if domain_key in domain:
-                return platform
-        
-        return "other"
 
-
-# 创建全局实例
-rss_content_service = RSSContentService()
-
-
-# 使用示例和测试方法
-async def example_usage():
-    """RSS内容服务使用示例（新架构）"""
-    
-    # 初始化服务
-    rss_service = RSSContentService()
-    
-    # 测试RSS URL
-    test_urls = [
-        "https://rsshub.app/bilibili/user/video/2267573",  # B站视频
-        "https://rsshub.app/weibo/user/1195230310",        # 微博动态
-    ]
-    
-    for i, rss_url in enumerate(test_urls, 1):
-        print(f"\n{'='*60}")
-        print(f"测试RSS拉取 {i}: {rss_url}")
-        print('='*60)
-        
-        # 使用新架构拉取和存储RSS内容
-        result = await rss_service.fetch_and_store_rss_content(
-            rss_url=rss_url, 
-            subscription_id=i, 
-            user_id=1
-        )
-        
-        # 显示结果
-        print(f"处理结果: {result}")
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(example_usage()) 

@@ -19,7 +19,7 @@ from app.services.fetch_limit_service import (
     FetchAttemptResult
 )
 from app.services.subscription_service import SubscriptionService
-from app.services.rss_content_service import RSSContentService
+from app.services import rss_content_service
 from app.services.user_service import UserService
 
 router = APIRouter()
@@ -239,8 +239,7 @@ async def _perform_unified_fetch(user_id: int, subscriptions: list) -> Dict[str,
     try:
         from loguru import logger
         
-        # 初始化RSS内容服务
-        rss_content_service = RSSContentService()
+        # 使用全局统一的RSS内容服务实例
         
         total_count = len(subscriptions)
         success_count = 0

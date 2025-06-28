@@ -3,12 +3,13 @@
 管理用户的订阅频率配置、自动拉取开关等设置
 """
 
-import sqlite3
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
+
+from ..core.database_manager import get_db_connection, get_db_transaction
 
 class FrequencyType(str, Enum):
     """订阅频率类型"""
@@ -50,7 +51,7 @@ class FetchConfigService:
         获取用户的拉取配置
         如果用户没有配置，返回默认配置（不自动创建）
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT user_id, auto_fetch_enabled, frequency, preferred_hour, 
@@ -81,7 +82,7 @@ class FetchConfigService:
         创建或更新用户拉取配置
         支持部分字段更新
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             
             # 检查用户是否已有配置
@@ -138,14 +139,12 @@ class FetchConfigService:
                     current_time
                 ))
             
-            conn.commit()
-            
             # 返回更新后的配置
             return self.get_user_config(user_id)
     
     def get_auto_fetch_users(self) -> list[FetchConfig]:
         """获取所有开启自动拉取的用户配置"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT user_id, auto_fetch_enabled, frequency, preferred_hour, 
@@ -226,7 +225,7 @@ class FetchConfigService:
     
     def disable_user_config(self, user_id: int) -> bool:
         """禁用用户配置（软删除）"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_fetch_configs 

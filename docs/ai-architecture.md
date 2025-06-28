@@ -12,7 +12,7 @@
 
 ## 🎯 概述
 
-RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个性化日报生成和智能对话服务。本架构基于本地化部署，确保数据安全和成本控制，通过多层安全防护和智能意图识别，提供可靠的AI增强功能。
+RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个性化日报生成和智能对话服务。本架构基于本地化部署，确保数据安全和成本控制，通过多层安全防护和直接语义检索，提供可靠的AI增强功能。
 
 ### 核心目标
 
@@ -24,107 +24,226 @@ RSS智能订阅器AI服务架构旨在为用户提供智能内容预处理、个
 
 ## 🏗️ 系统架构
 
-### 架构概览
+### 系统架构总览
 
   ```mermaid
-  graph TD
-      A["RSS内容入库"] --> B["内容预处理队列"]
-      
-      subgraph "AI预处理链路（独立）"
-          C["定时预处理任务<br/>(每日6:00AM)"] --> D["获取待处理内容"]
-          D --> E["批量处理引擎<br/>(10条/批次)"]
-          
-          E --> F["LLM模型<br/>(Qwen2.5-7B)"]
-          E --> G["向量模型<br/>(sentence-transformers)"]
-          
-          F --> H["生成标签/主题/摘要"]
-          G --> I["生成向量嵌入<br/>(768维向量)"]
-          
-          H --> J["更新SQLite标准库"]
-          I --> K["存储ChromaDB向量库"]
+  graph TB
+      %% 数据输入层
+      subgraph Input ["📥 数据输入层"]
+          RSS["RSS内容入库"]
+          UserQuery["用户对话请求"]
+          Schedule["定时任务触发"]
       end
       
-      B --> C
-      
-      subgraph "AI服务链路"
-          L["用户对话请求"] --> M["意图识别引擎"]
-          P["定时日报任务<br/>(每日6:30AM)"] --> Q["用户内容聚合"]
-          
-          M --> N["黑名单过滤器"]
-          N --> O["Prompt生成引擎"]
-          Q --> O
-          
-          subgraph "Prompt生成引擎核心"
-              O --> R["向量库圈选规则"]
-              R --> S["Prompt模板选择器"]
-              S --> T["动态Prompt组装器"]
-          end
-          
-          T --> U["LLM模型"]
-          U --> V["输出过滤器"]
-          V --> W["结果输出"]
+      %% AI处理核心
+      subgraph AICore ["🧠 AI处理核心"]
+          PreProcessor["AI预处理服务<br/>标签摘要生成"]
+          ConversationEngine["对话处理引擎<br/>向量检索+智能回答"]
+          ReportGenerator["日报生成器<br/>内容聚合+摘要"]
+          PromptEngine["Prompt生成引擎<br/>三场景统一管理"]
       end
       
-      subgraph "模板库系统"
-          X1["黑名单模板库"]
-          X2["基于主题的对话模板库"]
-          X3["日报模板库"]
-          X4["通用模板库"]
-          X5["向量检索规则库"]
+      %% AI模型层
+      subgraph Models ["🤖 AI模型层"]
+          LLM["Qwen2.5-7B-Instruct<br/>本地部署"]
+          VectorModel["Sentence Transformers<br/>768维向量"]
       end
       
-      subgraph "存储系统"
-          Y1[("SQLite标准库<br/>(完整内容+AI生成数据)")]
-          Y2[("ChromaDB向量库<br/>(向量+元数据)")]
+      %% 安全和性能层
+      subgraph Security ["🛡️ 安全与性能层"]
+          SecurityFilter["安全过滤器<br/>黑名单+注入检测"]
+          PerformanceManager["性能管理器<br/>缓存+并发+监控"]
+          FallbackHandler["兜底处理器<br/>异常场景处理"]
       end
       
-      J --> Y1
-      K --> Y2
+      %% 存储层
+      subgraph Storage ["💾 存储层"]
+          SQLite[("SQLite数据库<br/>内容+AI数据")]
+          ChromaDB[("ChromaDB向量库<br/>语义检索")]
+          Cache[("Redis缓存<br/>对话+会话")]
+      end
       
-      Y2 --> R
-      X1 --> N
-      X2 --> S
-      X3 --> S
-      X4 --> S
-      X5 --> R
+      %% 配置层
+      subgraph Config ["⚙️ 配置层"]
+          TemplateLib["模板库<br/>Prompt模板管理"]
+          BlacklistLib["黑名单库<br/>安全规则配置"]
+          ConfigManager["配置管理器<br/>系统参数调优"]
+      end
       
-      style C fill:#e1f5fe
-      style L fill:#f3e5f5
-      style P fill:#f3e5f5
-      style O fill:#fff3e0
-      style F fill:#ffea00
-      style G fill:#ffea00
-      style T fill:#81c784
-      style U fill:#ffea00
-      style Y1 fill:#e8f5e8
-      style Y2 fill:#e8f5e8
+      %% 主要数据流
+      RSS --> PreProcessor
+      UserQuery --> ConversationEngine
+      Schedule --> ReportGenerator
+      
+      PreProcessor --> PromptEngine
+      ConversationEngine --> PromptEngine
+      ReportGenerator --> PromptEngine
+      
+      PromptEngine --> LLM
+      PreProcessor --> VectorModel
+      ConversationEngine --> VectorModel
+      
+      %% 安全和性能连接
+      ConversationEngine --> SecurityFilter
+      SecurityFilter --> PerformanceManager
+      PerformanceManager --> FallbackHandler
+      
+      %% 存储连接
+      PreProcessor --> SQLite
+      PreProcessor --> ChromaDB
+      ConversationEngine --> ChromaDB
+      ConversationEngine --> SQLite
+      ReportGenerator --> SQLite
+      PerformanceManager --> Cache
+      
+      %% 配置连接
+      PromptEngine --> TemplateLib
+      SecurityFilter --> BlacklistLib
+      AICore --> ConfigManager
+      
+      %% 样式定义
+      style RSS fill:#e1f5fe
+      style UserQuery fill:#f3e5f5
+      style Schedule fill:#f3e5f5
+      style LLM fill:#ffea00
+      style VectorModel fill:#e3f2fd
+      style PromptEngine fill:#fff3e0
+      style SecurityFilter fill:#ffebee
+      style FallbackHandler fill:#f1f8e9
+      style SQLite fill:#e8f5e8
+      style ChromaDB fill:#e8f5e8
+      style Cache fill:#e8f5e8
+  ```
+
+### 详细处理流程
+
+  ```mermaid
+  graph LR
+      subgraph Preprocessing ["🔄 预处理流程"]
+          A1["RSS内容"] --> A2["批量提取10条"]
+          A2 --> A3["并行处理"]
+          A3 --> A4["LLM生成标签摘要"]
+          A3 --> A5["向量化768维"]
+          A4 --> A6["存储SQLite"]
+          A5 --> A7["存储ChromaDB"]
+      end
+      
+      subgraph Conversation ["💬 对话流程"]
+          B1["用户输入"] --> B2["安全过滤"]
+          B2 --> B3["向量化查询"]
+          B3 --> B4["检索相关内容"]
+          B4 --> B5{"找到内容?"}
+          B5 -->|是| B6["生成Prompt"]
+          B5 -->|否| B7["兜底话术"]
+          B6 --> B8["LLM推理"]
+          B8 --> B9["结构化输出"]
+      end
+      
+      subgraph DailyReport ["📰 日报流程"]
+          C1["定时6:30AM"] --> C2["聚合昨日内容"]
+          C2 --> C3{"内容足够?"}
+          C3 -->|是| C4["生成日报Prompt"]
+          C3 -->|否| C5["跳过生成"]
+          C4 --> C6["LLM生成日报"]
+          C6 --> C7["存储日报"]
+      end
+      
+      style A4 fill:#ffea00
+      style A5 fill:#e3f2fd
+      style B8 fill:#ffea00
+      style B7 fill:#f1f8e9
+      style C6 fill:#ffea00
+      style C5 fill:#f1f8e9
   ```
 
 ### 技术选型
 
 | 组件 | 技术选择 | 说明 |
 |------|----------|------|
-| **LLM模型** | Qwen2.5-7B-Instruct | 适配M1 MacBook Pro，模型大小约4GB |
-| **向量模型** | sentence-transformers | paraphrase-multilingual-MiniLM-L12-v2 |
-| **向量数据库** | ChromaDB | 本地化部署，支持相似度搜索 |
-| **标准数据库** | SQLite | 存储完整内容信息 |
-| **意图识别** | 关键词正则 + 轻量BERT | 前期正则实现，后期升级BERT |
-| **任务调度** | APScheduler | 与现有调度器集成 |
+| **LLM模型** | Qwen2.5-7B-Instruct | 适配M1 MacBook Pro，模型大小约4GB，JSON结构输出 |
+| **向量模型** | sentence-transformers | paraphrase-multilingual-MiniLM-L12-v2，768维向量 |
+| **向量数据库** | ChromaDB | 本地化部署，支持相似度搜索和元数据过滤 |
+| **标准数据库** | SQLite | 存储完整内容信息，支持AI生成字段 |
+| **缓存系统** | Redis | 对话缓存、会话状态管理，可选组件 |
+| **黑名单过滤** | 正则表达式 + 关键词库 | 敏感词检测、Prompt注入攻击防护 |
+| **任务调度** | APScheduler | 与现有调度器集成，支持AI定时任务 |
+| **性能监控** | 自研轻量级监控 | 响应时间追踪、模型调用统计 |
 
 ### 数据流架构
 
 ```mermaid
-graph LR
-    A[RSS内容] --> B[SQLite标准库<br/>完整内容信息]
-    B --> C[AI预处理]
-    C --> D[更新SQLite<br/>tags/topics/summary]
-    C --> E[生成向量]
-    E --> F[ChromaDB向量库<br/>content_id+embedding]
+graph TB
+    subgraph DataInput ["📥 数据输入层"]
+        A[RSS内容入库] --> B[SQLite完整内容存储]
+        C[用户对话输入] --> D[输入验证+黑名单过滤]
+    end
     
-    G[用户查询] --> H[ChromaDB检索]
-    H --> I[获取content_ids]
-    I --> J[SQLite获取完整内容]
-    J --> K[返回给前端]
+    subgraph PreProcessFlow ["🔄 预处理数据流"]
+        B --> E[批量内容提取<br/>10条/批次]
+        E --> F[并行处理]
+        F --> G[LLM: JSON结构输出<br/>tags/topics/summary]  
+        F --> H[向量模型: 768维向量]
+        G --> I[SQLite: 更新AI字段]
+        H --> J[ChromaDB: 存储向量+元数据]
+    end
+    
+    subgraph ConversationFlow ["💬 对话数据流"]
+        D --> K[用户输入向量化<br/>sentence-transformers]
+        K --> L[ChromaDB向量检索<br/>相似度匹配]
+        L --> M{检索到内容?}
+        M -->|是| N[SQLite获取完整内容<br/>基于content_ids]
+        M -->|否| O[工程兜底话术<br/>无LLM调用]
+        N --> P[动态Prompt组装<br/>结构化JSON模板]
+        P --> Q[LLM推理<br/>JSON结构输出]
+        Q --> R[工程解析<br/>answer+references]
+        R --> S[前端结构化展示]
+    end
+    
+    subgraph DailyReportFlow ["📰 日报数据流"]
+        T[定时任务触发<br/>6:30AM] --> U[SQLite查询<br/>用户昨日全部内容] 
+        U --> V{内容充足?}
+        V -->|是| W[日报Prompt组装<br/>聚合模板]
+        V -->|否| X[跳过生成<br/>内容不足提醒]
+        W --> Y[LLM生成日报<br/>JSON结构输出]
+        Y --> Z[日报存储<br/>SQLite]
+    end
+    
+    subgraph CacheLayer ["⚡ 缓存层"]
+        Cache1[对话缓存<br/>Redis]
+        Cache2[向量检索缓存<br/>ChromaDB内置]
+        Cache3[用户会话状态<br/>Redis]
+    end
+    
+    subgraph ErrorHandling ["🛡️ 异常处理层"]
+        Error1[LLM超时<br/>降级到内容列表]
+        Error2[向量检索失败<br/>兜底话术]
+        Error3[预处理失败<br/>重试+基础标签]
+    end
+    
+    %% 缓存连接
+    K --> Cache1
+    L --> Cache2
+    D --> Cache3
+    
+    %% 错误处理连接
+    Q --> Error1
+    L --> Error2
+    G --> Error3
+    
+    %% 样式定义
+    style A fill:#e1f5fe
+    style C fill:#f3e5f5
+    style T fill:#f3e5f5
+    style G fill:#ffea00
+    style H fill:#e3f2fd
+    style K fill:#e3f2fd
+    style Q fill:#ffea00
+    style Y fill:#ffea00
+    style O fill:#f1f8e9
+    style X fill:#f1f8e9
+    style Error1 fill:#ffebee
+    style Error2 fill:#ffebee
+    style Error3 fill:#ffebee
 ```
 
 ## 🧠 核心组件设计
@@ -132,145 +251,482 @@ graph LR
 ### 1. AI预处理服务
 
 **功能**：对新入库的RSS内容进行智能预处理
-**调用场景**：预处理（定时触发）
-**Prompt模板**：预处理默认模板
+**调用场景**：预处理（定时触发6:00AM）
+**输出格式**：JSON结构化数据
 
 ```python
 class AIPreprocessingService:
     async def daily_preprocessing_task(self):
         """每日预处理任务"""
-        # 1. 获取待处理内容
-        # 2. 批量处理（10条/批次）
-        # 3. LLM生成标签/主题/摘要
-        # 4. 向量化内容
+        # 1. 获取待处理内容 (批量10条)
+        # 2. 并行处理：LLM生成+向量化
+        # 3. LLM生成JSON格式标签/主题/摘要
+        # 4. 向量化内容 (768维)
         # 5. 存储到SQLite和ChromaDB
-        # 6. 重试机制和兜底策略
-```
-
-### 2. 意图识别引擎
-
-**功能**：分析用户输入，识别查询意图
-**支持意图类型**：
-- 内容查询
-- 摘要请求  
-- 推荐需求
-- 特定主题查询
-
-```python
-class IntentRecognitionService:
-    def analyze_user_intent(self, question: str, user_id: int) -> dict:
-        """分析用户意图"""
-        return {
-            "intent_type": "content_query",
-            "topics": ["AI", "技术"],
-            "tags": ["机器学习", "深度学习"],
-            "content_ids": [],
-            "is_recommendation": False,
-            "confidence": 0.8
-        }
-```
-
-### 3. Prompt生成引擎
-
-**核心设计**：三种调用场景，各有独立的处理链路
-
-#### 场景1：预处理场景
-- **触发**：定时任务（每日6:00AM）
-- **目标**：生成标签、主题、摘要
-- **Prompt模板**：预处理默认模板
-- **无需检索**：直接处理原始内容
-
-#### 场景2：对话场景  
-- **触发**：用户主动询问
-- **目标**：基于用户订阅内容回答问题
-- **Prompt模板**：对话模板（科技/金融/通用）
-- **检索规则**：基于意图的向量检索
-
-#### 场景3：日报场景
-- **触发**：定时任务（每日6:30AM）
-- **目标**：生成个性化日报
-- **Prompt模板**：日报模板
-- **检索规则**：聚合用户昨日内容
-
-```python
-class PromptGenerationEngine:
-    async def generate_prompt(self, intent: dict, user_id: int, service_type: str) -> str:
-        """生成Prompt"""
-        if service_type == "preprocessing":
-            return await self._generate_preprocessing_prompt(content)
-        elif service_type == "conversation":
-            return await self._generate_conversation_prompt(intent, user_id)
-        elif service_type == "daily_report":
-            return await self._generate_daily_report_prompt(user_id)
-```
-
-### 4. 向量库圈选服务
-
-**功能**：根据不同场景的检索规则，从向量库中选择相关内容
-
-```python
-class VectorSelectorService:
-    async def get_contents_by_intent(self, user_id: int, intent: dict) -> list:
-        """基于意图获取内容"""
-        # 1. 标签精确匹配
-        # 2. 主题相关匹配
-        # 3. 向量相似度搜索
-        # 4. 返回content_ids
+        # 6. 异常处理：重试机制+基础标签兜底
         
-    async def get_user_yesterday_contents(self, user_id: int) -> list:
-        """获取用户昨日内容（日报场景）"""
-        
-    async def get_recommended_contents(self, user_id: int, tags: list) -> list:
-        """获取推荐内容（跨用户检索）"""
+    async def process_content_batch(self, contents: List[RSSContent]) -> List[ProcessedContent]:
+        """批量处理内容"""
+        try:
+            # 并行调用LLM和向量模型
+            llm_results = await self.llm_service.generate_tags_summary_batch(contents)
+            vectors = await self.vector_service.encode_batch([c.title + c.description for c in contents])
+            
+            return self._combine_results(contents, llm_results, vectors)
+        except Exception as e:
+            # 兜底策略：基础规则生成标签
+            return await self._fallback_processing(contents)
 ```
 
-### 5. 黑名单过滤器
+### 2. 黑名单过滤服务
 
-**多层防护机制**：
-- **输入层**：过滤用户输入的恶意内容
-- **意图层**：检测Prompt注入攻击
-- **输出层**：过滤LLM输出的不当内容
+**功能**：多层安全防护，避免恶意利用
+**过滤层级**：输入层、处理层、输出层
 
 ```python
 class BlacklistFilterService:
-    def filter_user_input(self, question: str, intent: dict) -> dict:
-        """过滤用户输入"""
+    def __init__(self):
+        self.sensitive_patterns = self._load_sensitive_patterns()
+        self.injection_patterns = self._load_injection_patterns()
+    
+    def filter_user_input(self, user_input: str) -> FilterResult:
+        """用户输入过滤"""
+        # 1. 敏感词检测
+        # 2. Prompt注入攻击检测
+        # 3. 输入长度和格式检查
+        # 4. 返回过滤结果和建议
         
-    def filter_llm_output(self, answer: str, original_question: str) -> dict:
-        """过滤LLM输出"""
+    def filter_llm_output(self, output: str, original_query: str) -> str:
+        """LLM输出过滤"""
+        # 1. 敏感内容审查
+        # 2. 格式化输出
+        # 3. 内容合规检查
 ```
 
+### 3. 场景化向量检索服务
+
+**功能**：根据不同场景进行智能内容检索
+**支持场景**：对话检索、日报聚合
+
+```python
+class VectorRetrievalService:
+    async def retrieve_for_conversation(self, user_query: str, user_id: int) -> List[RetrievedContent]:
+        """对话场景的向量检索"""
+        # 1. 用户输入向量化
+        query_vector = await self.embedder.encode(user_query)
+        
+        # 2. ChromaDB相似度检索 (仅该用户内容)
+        results = await self.chroma_client.query(
+            query_embeddings=[query_vector],
+            where={"user_id": user_id},
+            n_results=5,
+            include=['metadatas', 'distances']
+        )
+        
+        # 3. 相似度阈值过滤 (>0.6)
+        # 4. SQLite获取完整内容信息
+        return await self._build_retrieved_contents(results)
+    
+    async def retrieve_for_daily_report(self, user_id: int) -> List[RSSContent]:
+        """日报场景的内容聚合"""
+        # 获取用户昨日全部内容，按时间排序
+        yesterday = datetime.now() - timedelta(days=1)
+        return await self.content_service.get_user_contents_by_date(user_id, yesterday)
+```
+
+### 4. Prompt生成引擎
+
+**核心设计**：统一的Prompt管理器，支持三种场景的模板生成和JSON结构化输出
+
+```mermaid
+graph TB
+    subgraph PromptEngine ["⚙️ Prompt生成引擎架构"]
+        Input["场景输入<br/>用户查询+检索内容"]
+        
+        subgraph ScenarioRouter ["场景路由器"]
+            PreRoute["预处理场景"]
+            ConvRoute["对话场景"] 
+            ReportRoute["日报场景"]
+        end
+        
+        subgraph TemplateManager ["模板管理器"]
+            PreTemplate["预处理模板<br/>标签摘要生成"]
+            ConvTemplate["对话模板<br/>结构化问答"]
+            ReportTemplate["日报模板<br/>内容聚合"]
+        end
+        
+        subgraph OutputFormatter ["输出格式化器"]
+            JSONValidator["JSON格式验证"]
+            StructureBuilder["结构化构建器"]
+        end
+        
+        Output["JSON结构输出<br/>发送至LLM"]
+        
+        Input --> ScenarioRouter
+        PreRoute --> PreTemplate
+        ConvRoute --> ConvTemplate
+        ReportRoute --> ReportTemplate
+        
+        PreTemplate --> OutputFormatter
+        ConvTemplate --> OutputFormatter
+        ReportTemplate --> OutputFormatter
+        
+        JSONValidator --> StructureBuilder
+        StructureBuilder --> Output
+        
+        style Input fill:#e1f5fe
+        style Output fill:#ffea00
+        style JSONValidator fill:#f1f8e9
+    end
+```
+
+#### 场景化模板设计
+
+| 场景 | 触发方式 | 输入数据 | 输出格式 | 示例用途 |
+|------|----------|----------|----------|----------|
+| **预处理** | 定时6:00AM | RSS原始内容 | `{"tags": [], "topics": [], "summary": ""}` | 内容智能标记 |
+| **对话** | 用户查询 | 用户问题+检索内容 | `{"answer": "", "references": []}` | 智能问答 |
+| **日报** | 定时6:30AM | 用户昨日内容 | `{"title": "", "content": "", "highlights": []}` | 内容聚合 |
+
+#### 核心实现代码
+
+```python
+class UnifiedPromptEngine:
+    """统一的Prompt生成引擎，管理三种场景的模板生成"""
+    
+    def __init__(self):
+        self.template_manager = TemplateManager()
+        self.scenario_router = ScenarioRouter()
+        self.output_formatter = OutputFormatter()
+    
+    async def generate_prompt(self, scenario: str, **kwargs) -> Optional[str]:
+        """统一的Prompt生成入口"""
+        
+        # 1. 场景路由
+        scenario_type = self.scenario_router.route(scenario, **kwargs)
+        if not scenario_type:
+            return None
+            
+        # 2. 模板选择和生成
+        template = await self.template_manager.get_template(scenario_type)
+        raw_prompt = template.format(**kwargs)
+        
+        # 3. JSON格式化和验证
+        structured_prompt = self.output_formatter.format_json_prompt(
+            raw_prompt, scenario_type
+        )
+        
+        return structured_prompt
+    
+    # 场景特定方法
+    async def generate_preprocessing_prompt(self, content: RSSContent) -> str:
+        """预处理场景：生成内容标签和摘要"""
+        return await self.generate_prompt("preprocessing", content=content)
+    
+    async def generate_conversation_prompt(self, user_query: str, contents: List[RetrievedContent]) -> Optional[str]:
+        """对话场景：基于检索内容回答用户问题"""
+        if not contents:
+            return None  # 无内容时不生成Prompt，由工程兜底
+            
+        return await self.generate_prompt(
+            "conversation", 
+            user_query=user_query, 
+            retrieved_contents=contents
+        )
+    
+    async def generate_daily_report_prompt(self, user_contents: List[RSSContent], date: str) -> str:
+        """日报场景：聚合用户内容生成日报"""
+        return await self.generate_prompt(
+            "daily_report",
+            contents=user_contents,
+            date=date
+        )
+
+class TemplateManager:
+    """模板管理器：负责各场景的模板管理"""
+    
+    PREPROCESSING_TEMPLATE = '''
+    请分析以下RSS内容，生成标签、主题和摘要，严格按JSON格式返回：
+    
+    标题：{title}
+    内容：{description}
+    
+    返回格式：
+    {{
+        "tags": ["标签1", "标签2", "标签3"],
+        "topics": ["主题1", "主题2"], 
+        "summary": "简洁的内容摘要...",
+        "content_type": "video|article|news"
+    }}
+    '''
+    
+    CONVERSATION_TEMPLATE = '''
+    基于用户订阅的以下内容回答问题，必须返回JSON格式：
+    
+    用户问题：{user_query}
+    
+    相关内容：
+    {content_list}
+    
+    返回格式：
+    {{
+        "answer": "基于您的订阅内容的详细回答...",
+        "references": [
+            {{"content_id": 123, "title": "内容标题", "snippet": "相关片段", "relevance": 0.9}}
+        ],
+        "confidence": 0.8,
+        "suggestion": "进一步的建议或相关话题"
+    }}
+    '''
+    
+    DAILY_REPORT_TEMPLATE = '''
+    基于用户{date}的订阅内容，生成个性化日报：
+    
+    内容列表：
+    {content_summary}
+    
+    返回格式：
+    {{
+        "title": "📰 {date} 个人资讯日报",
+        "content": "## 今日要闻\n\n详细的日报内容...",
+        "highlights": ["重点1", "重点2", "重点3"],
+        "main_topics": ["主要话题1", "主要话题2"],
+        "content_count": {content_count},
+        "reading_time": "预计阅读时间5分钟"
+    }}
+    '''
+```
+
+### 5. 异常处理和兜底机制
+
+**功能**：确保系统稳定性和用户体验
+
+```python
+class FallbackHandler:
+    async def handle_no_content_found(self, user_query: str, user_id: int) -> ConversationResponse:
+        """处理检索不到内容的情况"""
+        # 1. 分析用户历史偏好
+        user_tags = await self.get_user_frequent_tags(user_id)
+        
+        # 2. 生成智能建议
+        suggestions = self._generate_content_suggestions(user_query, user_tags)
+        
+        return ConversationResponse(
+            success=True,
+            answer=f"抱歉，没有找到相关内容。{suggestions}",
+            is_fallback=True
+        )
+    
+    async def handle_llm_timeout(self, retrieved_contents: List[RetrievedContent]) -> ConversationResponse:
+        """处理LLM超时的降级策略"""
+        # 降级到简单的内容列表展示
+        return ConversationResponse(
+            success=True,
+            answer="找到相关内容，但AI分析超时，为您展示相关内容列表：",
+            content_list=retrieved_contents,
+            is_degraded=True
+        )
+```
+
+
+
 ## 📊 API接口设计
+
+### 数据模型定义
+
+```python
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime
+
+class ConversationRequest(BaseModel):
+    query: str                           # 用户输入查询
+    user_id: int                         # 用户ID
+    enable_cross_user: bool = False      # 是否开启跨用户推荐(暂时不实现)
+
+class ContentReference(BaseModel):
+    content_id: int                      # 内容ID
+    title: str                           # 内容标题
+    url: str                             # 内容链接
+    platform: str                        # 平台来源
+    snippet: str                         # 引用片段
+    relevance_score: float               # 相关度分数
+
+class ConversationResponse(BaseModel):
+    success: bool                        # 请求是否成功
+    answer: str                          # AI生成的回答文本
+    referenced_contents: List[ContentReference] = []  # 引用的内容列表
+    has_links: bool                      # 是否包含链接
+    response_type: str                   # 响应类型: "ai_generated" | "fallback" | "degraded"
+    processing_time: float               # 处理时间(毫秒)
+    is_cached: bool = False              # 是否来自缓存
+
+class DailyReportResponse(BaseModel):
+    success: bool                        # 生成是否成功
+    date: str                            # 日报日期 "2024-12-19"
+    content: str                         # 日报内容(Markdown格式)
+    content_count: int                   # 聚合的内容数量
+    generated_at: datetime               # 生成时间
+    topics: List[str] = []               # 主要话题
+```
 
 ### 对话接口
 
 ```python
 @router.post("/api/v1/ai/conversation")
 async def ai_conversation(request: ConversationRequest):
-    """AI对话接口"""
-    # 1. 意图识别
-    # 2. 黑名单过滤
-    # 3. 生成Prompt
-    # 4. LLM推理
-    # 5. 输出过滤
-    return ConversationResponse(
-        success=True,
-        answer="基于您的订阅内容，我找到了相关信息...",
-        intent_info={"topics": ["AI"], "confidence": 0.8}
-    )
+    """AI智能对话接口 - 完全工程侧包装，用户不直接与LLM交互"""
+    
+    try:
+        # Step 1: 输入验证和黑名单过滤
+        filter_result = blacklist_service.filter_user_input(request.query)
+        if not filter_result.is_safe:
+            return ConversationResponse(
+                success=False,
+                answer="输入内容包含不当信息，请重新输入。",
+                response_type="blocked"
+            )
+        
+        # Step 2: 用户输入向量化
+        query_vector = await embedding_service.encode(request.query)
+        
+        # Step 3: 向量检索相关内容
+        retrieved_contents = await vector_service.retrieve_for_conversation(
+            user_query=request.query,
+            user_id=request.user_id
+        )
+        
+        # Step 4: 检查是否有相关内容
+        if not retrieved_contents:
+            # 工程兜底策略，不调用LLM
+            fallback_message = await fallback_handler.handle_no_content_found(
+                request.query, request.user_id
+            )
+            return ConversationResponse(
+                success=True,
+                answer=fallback_message,
+                response_type="fallback"
+            )
+        
+        # Step 5: 生成结构化Prompt
+        prompt = await prompt_engine.generate_conversation_prompt(
+            request.query, retrieved_contents
+        )
+        
+        # Step 6: LLM推理 (JSON结构化输出)
+        try:
+            llm_response = await llm_service.generate_with_timeout(
+                prompt=prompt,
+                timeout_seconds=10,
+                response_format="json"
+            )
+            
+            # Step 7: 解析LLM的JSON输出
+            parsed_response = json.loads(llm_response)
+            
+            # Step 8: 工程侧包装最终响应
+            return ConversationResponse(
+                success=True,
+                answer=parsed_response["answer"],
+                referenced_contents=[
+                    ContentReference(**ref) for ref in parsed_response.get("references", [])
+                ],
+                has_links=len(parsed_response.get("references", [])) > 0,
+                response_type="ai_generated",
+                processing_time=response_time
+            )
+            
+        except asyncio.TimeoutError:
+            # LLM超时，降级处理
+            return await fallback_handler.handle_llm_timeout(retrieved_contents)
+            
+    except Exception as e:
+        logger.error(f"AI对话服务异常: {e}")
+        return ConversationResponse(
+            success=False,
+            answer="服务暂时不可用，请稍后重试。",
+            response_type="error"
+        )
 ```
 
 ### 日报接口
 
 ```python
-@router.get("/api/v1/ai/daily-report/{date}")
-async def get_daily_report(date: str, current_user: User):
-    """获取每日报告"""
-    return DailyReportResponse(
-        date=date,
-        content="📰 今日要闻\n...",
-        generated_at=datetime.now()
-    )
+@router.get("/api/v1/ai/daily-report/{user_id}/{date}")
+async def get_daily_report(user_id: int, date: str):
+    """获取用户每日AI报告"""
+    
+    try:
+        # Step 1: 验证日期格式和用户权限
+        report_date = datetime.strptime(date, "%Y-%m-%d").date()
+        
+        # Step 2: 获取用户当日内容
+        user_contents = await content_service.get_user_contents_by_date(
+            user_id=user_id,
+            target_date=report_date
+        )
+        
+        # Step 3: 检查内容数量是否足够生成日报
+        if len(user_contents) < 3:
+            return DailyReportResponse(
+                success=True,
+                date=date,
+                content="📰 今日内容较少，暂未生成AI日报。\n\n建议检查订阅配置或手动拉取内容。",
+                content_count=len(user_contents),
+                generated_at=datetime.now(),
+                response_type="insufficient_content"
+            )
+        
+        # Step 4: 生成日报Prompt
+        prompt = await prompt_engine.generate_daily_report_prompt(
+            user_contents=user_contents,
+            user_id=user_id,
+            date=date
+        )
+        
+        # Step 5: LLM生成日报 (JSON结构化输出)
+        llm_response = await llm_service.generate_daily_report(
+            prompt=prompt,
+            response_format="json"
+        )
+        
+        parsed_report = json.loads(llm_response)
+        
+        return DailyReportResponse(
+            success=True,
+            date=date,
+            content=parsed_report["content"],
+            content_count=len(user_contents),
+            generated_at=datetime.now(),
+            topics=parsed_report.get("main_topics", [])
+        )
+        
+    except Exception as e:
+        logger.error(f"日报生成异常: {e}")
+        return DailyReportResponse(
+            success=False,
+            date=date,
+            content="日报生成失败，请稍后重试。",
+            content_count=0,
+            generated_at=datetime.now()
+        )
+```
+
+### 性能监控接口
+
+```python
+@router.get("/api/v1/ai/metrics")
+async def get_ai_metrics():
+    """获取AI服务性能指标"""
+    return {
+        "llm_model_status": "healthy",           # LLM模型状态
+        "average_response_time": 1.2,           # 平均响应时间(秒)
+        "daily_conversation_count": 156,        # 今日对话次数
+        "cache_hit_rate": 0.35,                 # 缓存命中率
+        "fallback_rate": 0.08,                  # 兜底响应比例
+        "vector_db_size": "2.1GB",              # 向量数据库大小
+        "preprocessing_queue": 23               # 预处理队列长度
+    }
 ```
 
 ## ⚙️ 配置管理
@@ -279,22 +735,82 @@ async def get_daily_report(date: str, current_user: User):
 AI_CONFIG = {
     "llm": {
         "model_name": "Qwen/Qwen2.5-7B-Instruct",
+        "model_path": "./models/qwen2.5-7b-instruct",  # 本地模型路径
         "max_tokens": 2048,
-        "temperature": 0.7
+        "temperature": 0.7,
+        "timeout_seconds": 10,                          # LLM推理超时时间
+        "max_concurrent_requests": 3,                   # 最大并发请求数
+        "response_format": "json"                       # 强制JSON输出格式
     },
     "embedding": {
         "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
-        "vector_dimension": 768
+        "vector_dimension": 768,
+        "batch_size": 32,                               # 向量化批处理大小
+        "normalize_embeddings": True                    # 是否归一化向量
+    },
+    "vector_db": {
+        "chroma_persist_directory": "./data/chroma_db", # ChromaDB存储路径
+        "collection_name": "rss_contents",              # 集合名称
+        "similarity_threshold": 0.6,                    # 相似度阈值
+        "max_results": 5                                # 最大检索结果数
     },
     "preprocessing": {
-        "schedule": "0 6 * * *",  # 每日6:00AM
-        "batch_size": 10,
-        "max_retries": 3
+        "schedule": "0 6 * * *",                        # 每日6:00AM
+        "batch_size": 10,                               # 批处理大小
+        "max_retries": 3,                               # 最大重试次数
+        "retry_delay": 60,                              # 重试延迟(秒)
+        "fallback_tags": ["内容", "信息", "资讯"]        # 兜底标签
     },
     "daily_report": {
-        "schedule": "30 6 * * *",  # 每日6:30AM
-        "min_content_count": 3
+        "schedule": "30 6 * * *",                       # 每日6:30AM
+        "min_content_count": 3,                         # 最少内容数量
+        "max_content_count": 50,                        # 最多内容数量
+        "report_format": "markdown"                     # 日报格式
+    },
+    "conversation": {
+        "max_query_length": 500,                        # 最大查询长度
+        "cache_ttl": 3600,                              # 缓存生存时间(秒)
+        "enable_cache": True,                           # 是否启用缓存
+        "fallback_messages": {                          # 兜底话术配置
+            "no_content": "抱歉，在您的订阅内容中没有找到相关信息。建议您：\n1. 尝试其他关键词\n2. 检查订阅配置\n3. 手动拉取最新内容",
+            "timeout": "AI分析超时，为您展示相关内容列表：",
+            "error": "服务暂时不可用，请稍后重试。"
+        }
+    },
+    "security": {
+        "enable_blacklist": True,                       # 启用黑名单过滤
+        "blacklist_file": "./config/blacklist.json",   # 黑名单文件路径
+        "max_requests_per_minute": 30,                  # 每分钟最大请求数
+        "enable_rate_limit": True                       # 启用限流
+    },
+    "performance": {
+        "enable_monitoring": True,                      # 启用性能监控
+        "log_slow_queries": True,                       # 记录慢查询
+        "slow_query_threshold": 2.0,                    # 慢查询阈值(秒)
+        "metrics_collection_interval": 300             # 指标收集间隔(秒)
     }
+}
+```
+
+### 黑名单配置文件示例
+
+```json
+// config/blacklist.json
+{
+    "sensitive_keywords": [
+        "政治敏感词",
+        "暴力内容",
+        "色情内容"
+    ],
+    "injection_patterns": [
+        "ignore.*previous.*instructions",
+        "forget.*system.*prompt",
+        "你是.*助手.*现在.*扮演",
+        "请忘记.*之前.*规则"
+    ],
+    "blocked_domains": [
+        "malicious-site.com"
+    ]
 }
 ```
 

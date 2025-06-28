@@ -3,11 +3,12 @@
 管理用户每日拉取次数限制、可用性判断等风控功能
 """
 
-import sqlite3
 import os
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+
+from app.core.database_manager import get_db_connection, get_db_transaction
 
 @dataclass
 class FetchQuota:
@@ -133,7 +134,7 @@ class FetchLimitService:
         today = date.today()
         current_time = datetime.now()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -153,7 +154,7 @@ class FetchLimitService:
         Returns:
             拉取历史记录列表
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT fetch_date, fetch_count, auto_fetch_count, manual_fetch_count,
@@ -188,7 +189,7 @@ class FetchLimitService:
         """
         today = date.today()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_fetch_logs
@@ -202,7 +203,7 @@ class FetchLimitService:
     # 私有方法
     def _get_user_daily_limit(self, user_id: int) -> int:
         """获取用户的每日拉取限制"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT daily_limit
@@ -215,7 +216,7 @@ class FetchLimitService:
     
     def _get_today_fetch_count(self, user_id: int, today: date) -> int:
         """获取用户今日已拉取次数"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT fetch_count
@@ -228,7 +229,7 @@ class FetchLimitService:
     
     def _get_last_fetch_info(self, user_id: int, today: date) -> Dict[str, Any]:
         """获取最后拉取信息"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT last_fetch_at, last_fetch_success
@@ -250,7 +251,7 @@ class FetchLimitService:
         today = date.today()
         current_time = datetime.now()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             
             # 尝试获取今日记录

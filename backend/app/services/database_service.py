@@ -26,38 +26,18 @@ class DatabaseService:
     
     def init_content_tables(self) -> bool:
         """
-        初始化RSS内容相关表
-        包括：rss_contents、content_media_items及相关索引、触发器、视图
+        🚫 已废弃：初始化RSS内容相关表（旧架构）
+        
+        ⚠️ 警告：此方法已废弃，请使用新的共享内容架构 init_shared_content_schema()
+        ⚠️ 旧架构表：rss_contents、content_media_items 已不再使用
+        ✅ 新架构表：shared_contents、user_content_relations、shared_content_media_items
         
         Returns:
-            bool: 初始化是否成功
+            bool: 始终返回False，提示使用新架构
         """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # 1. 创建RSS内容主表
-                self._create_rss_contents_table(cursor)
-                
-                # 2. 创建媒体项表
-                self._create_media_items_table(cursor)
-                
-                # 3. 创建索引
-                self._create_indexes(cursor)
-                
-                # 4. 创建触发器
-                self._create_triggers(cursor)
-                
-                # 5. 创建视图
-                self._create_views(cursor)
-                
-                conn.commit()
-                logger.success("✅ RSS内容表初始化完成")
-                return True
-                
-        except Exception as e:
-            logger.error(f"❌ RSS内容表初始化失败: {e}")
-            return False
+        logger.warning("🚫 init_content_tables() 已废弃，请使用 init_shared_content_schema()")
+        logger.warning("🚫 旧架构表不再创建，统一使用新的共享内容架构")
+        return False
     
     def _create_rss_contents_table(self, cursor: sqlite3.Cursor) -> None:
         """创建RSS内容主表"""
@@ -221,7 +201,8 @@ class DatabaseService:
             bool: 表是否存在
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            from ..core.database_manager import get_db_connection
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT name FROM sqlite_master 
@@ -243,7 +224,8 @@ class DatabaseService:
             Optional[list]: 表结构信息
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            from ..core.database_manager import get_db_connection
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"PRAGMA table_info({table_name})")
                 return cursor.fetchall()

@@ -4,7 +4,6 @@
 包含重试机制和任务记录管理
 """
 
-import sqlite3
 import os
 import logging
 from datetime import datetime, timedelta
@@ -18,6 +17,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 
+from ..core.database_manager import get_db_connection, get_db_transaction
 from .fetch_config_service import FetchConfigService, FetchConfig, FrequencyType
 from .fetch_limit_service import FetchLimitService
 
@@ -273,11 +273,10 @@ class AutoFetchScheduler:
         """执行用户的RSS拉取"""
         try:
             from .subscription_service import SubscriptionService
-            from .rss_content_service import RSSContentService
+            from . import rss_content_service
             
             subscription_service = SubscriptionService(self.db_path)
-            # 初始化RSS内容服务
-            rss_content_service = RSSContentService()
+            # 使用全局统一的RSS内容服务实例
             
             # 这里需要获取用户订阅列表的方法
             subscriptions = subscription_service.get_user_subscriptions(user_id)
@@ -320,7 +319,7 @@ class AutoFetchScheduler:
     
     def _update_subscription_last_update(self, subscription_id: int):
         """更新订阅的最后更新时间"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_subscriptions 
@@ -331,14 +330,14 @@ class AutoFetchScheduler:
     # 数据库操作方法
     def _task_exists(self, task_key: str) -> bool:
         """检查任务是否存在"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM fetch_task_logs WHERE task_key = ?", (task_key,))
             return cursor.fetchone()[0] > 0
     
     def _save_task(self, task: FetchTask):
         """保存任务到数据库"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO fetch_task_logs 
@@ -355,7 +354,7 @@ class AutoFetchScheduler:
     
     def _get_task(self, task_key: str) -> Optional[FetchTask]:
         """获取任务信息"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT user_id, task_type, task_key, scheduled_at, executed_at,
@@ -385,7 +384,7 @@ class AutoFetchScheduler:
     
     def _update_task_status(self, task_key: str, status: TaskStatus, **kwargs):
         """更新任务状态"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             
             update_fields = ["status = ?", "updated_at = ?"]
@@ -423,7 +422,7 @@ class AutoFetchScheduler:
     
     def _get_retry_tasks(self, current_time: datetime) -> List[str]:
         """获取需要重试的任务"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT task_key

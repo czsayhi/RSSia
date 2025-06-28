@@ -131,19 +131,6 @@ class SubscriptionListResponse(BaseModel):
     size: int
 
 
-class RSSContent(BaseModel):
-    """RSS内容"""
-    id: Optional[int] = None
-    subscription_id: int = Field(..., description="订阅ID")
-    title: str = Field(..., description="内容标题")
-    link: str = Field(..., description="内容链接")
-    description: Optional[str] = Field(None, description="内容描述")
-    pub_date: datetime = Field(..., description="发布时间")
-    content_hash: str = Field(..., description="内容哈希值，用于去重")
-    is_read: bool = False
-    created_at: Optional[datetime] = None
-
-
 class SubscriptionSchedule(BaseModel):
     """订阅调度配置"""
     auto_fetch: bool = Field(True, description="自动获取开关")

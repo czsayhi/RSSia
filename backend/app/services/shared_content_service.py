@@ -4,12 +4,12 @@
 整合内容去重和用户关系管理，提供完整的内容存储和查询功能
 """
 
-import sqlite3
 import json
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from loguru import logger
 
+from ..core.database_manager import get_db_connection, get_db_transaction
 from .content_deduplication_service import ContentDeduplicationService
 from .user_content_relation_service import UserContentRelationService
 
@@ -44,6 +44,7 @@ class SharedContentService:
             processed_count = 0
             new_content_count = 0
             reused_content_count = 0
+            need_ai_processing_ids = []  # 🔥 改名：需要AI处理的内容ID（不管新旧）
             
             logger.info(f"开始处理RSS内容: {len(rss_items)}条, user_id={user_id}, subscription_id={subscription_id}")
             
@@ -64,7 +65,11 @@ class SharedContentService:
                     if item.get('media_items'):
                         await self._store_media_items(content_id, item['media_items'])
                     
-                    # 4. 统计
+                    # 4. 检查是否需要AI处理（直接检查AI字段是否为空）
+                    if await self._needs_ai_processing(content_id):
+                        need_ai_processing_ids.append(content_id)
+                    
+                    # 5. 统计
                     if is_new:
                         new_content_count += 1
                         logger.debug(f"创建新内容: content_id={content_id}, title={item.get('title', '')[:50]}...")
@@ -82,7 +87,8 @@ class SharedContentService:
                 'total_processed': processed_count,
                 'new_content': new_content_count,
                 'reused_content': reused_content_count,
-                'deduplication_rate': round(reused_content_count / max(processed_count, 1) * 100, 1)
+                'deduplication_rate': round(reused_content_count / max(processed_count, 1) * 100, 1),
+                'need_ai_processing_ids': need_ai_processing_ids  # 🔥 返回需要AI处理的内容ID列表
             }
             
             logger.success(f"RSS内容处理完成: {result}")
@@ -108,7 +114,7 @@ class SharedContentService:
             List[Dict]: 内容列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 基础查询
@@ -271,6 +277,120 @@ class SharedContentService:
             logger.error(f"获取用户内容统计失败: {e}")
             return {}
     
+    async def _needs_ai_processing(self, content_id: int) -> bool:
+        """
+        检查内容是否需要AI处理（直接检查AI字段是否为空）
+        
+        Args:
+            content_id: 内容ID
+            
+        Returns:
+            bool: True表示需要AI处理，False表示已经处理过
+        """
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT summary, tags 
+                    FROM shared_contents 
+                    WHERE id = ?
+                """, (content_id,))
+                
+                result = cursor.fetchone()
+                if not result:
+                    # 内容不存在，理论上不应该发生
+                    return False
+                
+                summary, tags = result
+                
+                # 检查摘要和标签是否为空
+                has_summary = summary and summary.strip()
+                has_tags = tags and tags.strip()
+                
+                # 只要有一个AI字段为空，就需要处理
+                needs_processing = not (has_summary and has_tags)
+                
+                if needs_processing:
+                    logger.debug(f"内容需要AI处理: content_id={content_id}, summary={bool(has_summary)}, tags={bool(has_tags)}")
+                
+                return needs_processing
+                
+        except Exception as e:
+            logger.error(f"检查AI处理需求失败: {e}")
+            # 出错时保守处理，认为需要AI处理
+            return True
+
+    async def get_contents_by_ids(self, content_ids: List[int]) -> List[Dict[str, Any]]:
+        """
+        根据content_ids批量获取内容（用于AI预处理）
+        
+        Args:
+            content_ids: 内容ID列表
+            
+        Returns:
+            List[Dict]: 内容列表
+        """
+        if not content_ids:
+            return []
+            
+        try:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 构建查询语句
+                placeholder = ','.join(['?'] * len(content_ids))
+                query = f"""
+                    SELECT 
+                        id as content_id,
+                        title,
+                        author,
+                        published_at,
+                        original_link,
+                        description,
+                        description_text,
+                        summary,
+                        tags,
+                        platform,
+                        content_type,
+                        cover_image,
+                        feed_title,
+                        content_hash
+                    FROM shared_contents
+                    WHERE id IN ({placeholder})
+                    ORDER BY id DESC
+                """
+                
+                cursor.execute(query, content_ids)
+                rows = cursor.fetchall()
+                
+                # 处理结果
+                contents = []
+                for row in rows:
+                    content = {
+                        'content_id': row[0],
+                        'title': row[1],
+                        'author': row[2],
+                        'published_at': row[3],
+                        'original_link': row[4],
+                        'description': row[5],
+                        'description_text': row[6],
+                        'summary': row[7],
+                        'tags': json.loads(row[8]) if row[8] else [],
+                        'platform': row[9],
+                        'content_type': row[10],
+                        'cover_image': row[11],
+                        'feed_title': row[12],
+                        'content_hash': row[13]
+                    }
+                    contents.append(content)
+                
+                logger.info(f"批量读取内容: {len(content_ids)}个ID, 返回{len(contents)}条内容")
+                return contents
+                
+        except Exception as e:
+            logger.error(f"批量读取内容失败: {e}")
+            return []
+
     async def get_content_detail(self, content_id: int, user_id: int) -> Optional[Dict[str, Any]]:
         """
         获取内容详情
@@ -283,7 +403,7 @@ class SharedContentService:
             Optional[Dict]: 内容详情
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -348,7 +468,7 @@ class SharedContentService:
     async def _store_media_items(self, content_id: int, media_items: List[Dict[str, Any]]) -> None:
         """存储媒体项"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 for i, item in enumerate(media_items):
@@ -365,7 +485,6 @@ class SharedContentService:
                         i
                     ))
                 
-                conn.commit()
                 logger.debug(f"存储媒体项: content_id={content_id}, count={len(media_items)}")
                 
         except Exception as e:
@@ -374,7 +493,7 @@ class SharedContentService:
     async def _get_content_media_items(self, content_id: int) -> List[Dict[str, Any]]:
         """获取内容媒体项"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -435,7 +554,7 @@ class SharedContentService:
             List[Dict]: 搜索结果
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 query = """

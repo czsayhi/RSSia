@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 import sqlite3
 import os
+from ..core.database_manager import get_db_connection, get_db_transaction
 from ..models.subscription import (
     SubscriptionTemplate,
     UserSubscription,
@@ -33,6 +34,7 @@ class SubscriptionService:
         # 确保数据目录存在
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         
+        # 注意：这里保留原有的sqlite3.connect()，因为数据库管理器可能还未初始化
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
@@ -134,7 +136,7 @@ class SubscriptionService:
         """创建新订阅"""
         from app.config.template_loader import get_template_loader
         
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             
             # 使用新的模板加载器获取模板信息
@@ -174,7 +176,6 @@ class SubscriptionService:
             ))
             
             subscription_id = cursor.lastrowid
-            conn.commit()
             
             # 返回订阅信息
             return SubscriptionResponse(
@@ -194,7 +195,7 @@ class SubscriptionService:
         """获取用户订阅列表"""
         from app.config.template_loader import get_template_loader
         
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             
             # 获取总数（包含所有订阅源，不过滤is_active状态）
@@ -247,19 +248,18 @@ class SubscriptionService:
     
     def delete_subscription(self, subscription_id: int, user_id: int = 1) -> bool:
         """删除订阅（真正删除记录）"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 DELETE FROM user_subscriptions 
                 WHERE id = ? AND user_id = ?
             """, (subscription_id, user_id))
             
-            conn.commit()
             return cursor.rowcount > 0
     
     def update_subscription_status(self, subscription_id: int, is_active: bool, user_id: int = 1) -> bool:
         """更新订阅状态"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_subscriptions 
@@ -267,7 +267,6 @@ class SubscriptionService:
                 WHERE id = ? AND user_id = ?
             """, (is_active, subscription_id, user_id))
             
-            conn.commit()
             return cursor.rowcount > 0
 
 

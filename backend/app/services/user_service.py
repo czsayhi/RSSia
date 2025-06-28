@@ -3,7 +3,6 @@
 提供用户注册、登录验证、用户信息管理等功能
 """
 
-import sqlite3
 import os
 import hashlib
 import secrets
@@ -11,6 +10,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from loguru import logger
+
+from app.core.database_manager import get_db_connection, get_db_transaction
 
 
 @dataclass
@@ -41,7 +42,7 @@ class UserService:
     
     def _init_database(self):
         """初始化用户表"""
-        with sqlite3.connect(self.db_path) as conn:
+        with get_db_transaction() as conn:
             cursor = conn.cursor()
             
             # 创建用户表
@@ -63,7 +64,6 @@ class UserService:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_token ON users (access_token)")
             
-            conn.commit()
             logger.info("用户表初始化完成")
     
     def _hash_password(self, password: str) -> str:
@@ -78,7 +78,7 @@ class UserService:
     def create_user(self, username: str, email: str, password: str) -> User:
         """创建新用户"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 检查用户名是否已存在
@@ -118,8 +118,6 @@ class UserService:
                     current_time
                 ))
                 
-                conn.commit()
-                
                 logger.info(f"用户创建成功: {username} (ID: {user_id})，已创建默认拉取配置")
                 
                 return User(
@@ -140,7 +138,7 @@ class UserService:
     def authenticate_user(self, username: str, password: str) -> Optional[User]:
         """用户认证"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 查找用户（支持用户名或邮箱登录）
@@ -166,8 +164,6 @@ class UserService:
                     WHERE user_id = ?
                 """, (new_token, datetime.now(), row[0]))
                 
-                conn.commit()
-                
                 logger.info(f"用户认证成功: {row[1]} (ID: {row[0]})")
                 
                 return User(
@@ -188,7 +184,7 @@ class UserService:
     def get_user_by_token(self, token: str) -> Optional[User]:
         """通过令牌获取用户"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -219,7 +215,7 @@ class UserService:
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         """通过ID获取用户"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -250,7 +246,7 @@ class UserService:
     def invalidate_token(self, token: str) -> bool:
         """使令牌失效（登出）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -258,7 +254,6 @@ class UserService:
                     WHERE access_token = ?
                 """, (datetime.now(), token))
                 
-                conn.commit()
                 return cursor.rowcount > 0
                 
         except Exception as e:
@@ -269,10 +264,9 @@ class UserService:
         """创建测试用户（用于开发测试）"""
         try:
             # 先尝试删除已存在的测试用户
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM users WHERE username = 'admin'")
-                conn.commit()
             
             # 创建新的测试用户
             return self.create_user(

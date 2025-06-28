@@ -4,11 +4,12 @@
 负责用户与内容的关系映射、生命周期管理和状态更新
 """
 
-import sqlite3
 import json
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from loguru import logger
+
+from app.core.database_manager import get_db_connection, get_db_transaction
 
 
 class UserContentRelationService:
@@ -38,7 +39,7 @@ class UserContentRelationService:
             int: 关系ID
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 计算过期时间
@@ -59,7 +60,6 @@ class UserContentRelationService:
                         WHERE id = ?
                     """, (expires_at, existing[0]))
                     
-                    conn.commit()
                     logger.debug(f"更新用户内容关系过期时间: relation_id={existing[0]}")
                     return existing[0]
                 
@@ -71,7 +71,6 @@ class UserContentRelationService:
                 """, (user_id, content_id, subscription_id, expires_at, datetime.now()))
                 
                 relation_id = cursor.lastrowid
-                conn.commit()
                 
                 logger.info(f"创建用户内容关系: user_id={user_id}, content_id={content_id}, relation_id={relation_id}")
                 return relation_id
@@ -98,7 +97,7 @@ class UserContentRelationService:
             bool: 更新是否成功
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 构建更新SQL
@@ -133,7 +132,6 @@ class UserContentRelationService:
                 """, update_values)
                 
                 updated_rows = cursor.rowcount
-                conn.commit()
                 
                 if updated_rows > 0:
                     logger.info(f"更新用户内容状态: user_id={user_id}, content_id={content_id}, updates={updates}")
@@ -162,7 +160,7 @@ class UserContentRelationService:
             Optional[Dict]: 关系信息
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -200,7 +198,7 @@ class UserContentRelationService:
             int: 清理的关系数量
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 删除过期关系
@@ -222,7 +220,6 @@ class UserContentRelationService:
                 """)
                 
                 deleted_contents = cursor.rowcount
-                conn.commit()
                 
                 logger.info(f"清理过期数据: 关系={deleted_relations}, 内容={deleted_contents}")
                 return deleted_relations
@@ -242,7 +239,7 @@ class UserContentRelationService:
             Dict: 统计信息
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 总内容数
@@ -318,7 +315,7 @@ class UserContentRelationService:
             bool: 是否成功
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 new_expires_at = datetime.now() + timedelta(hours=extend_hours)
@@ -330,7 +327,6 @@ class UserContentRelationService:
                 """, (new_expires_at, user_id, content_id))
                 
                 updated_rows = cursor.rowcount
-                conn.commit()
                 
                 if updated_rows > 0:
                     logger.info(f"延长内容过期时间: user_id={user_id}, content_id={content_id}, hours={extend_hours}")
@@ -356,7 +352,7 @@ class UserContentRelationService:
             List[int]: 创建的关系ID列表
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 relation_ids = []
@@ -378,7 +374,6 @@ class UserContentRelationService:
                     
                     relation_ids.append(cursor.lastrowid)
                 
-                conn.commit()
                 logger.info(f"批量创建用户内容关系: {len(relation_ids)}条")
                 return relation_ids
                 

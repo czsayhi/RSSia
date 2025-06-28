@@ -1,6 +1,7 @@
 -- RSS内容共享存储架构
 -- 新存储方案：内容去重共享 + 用户关系映射
 -- 创建时间: 2025-01-14
+-- 修改时间: 2025-06-28 (字段分离优化)
 
 -- 1. 共享内容表（去重后的内容存储）
 CREATE TABLE IF NOT EXISTS shared_contents (
@@ -30,9 +31,10 @@ CREATE TABLE IF NOT EXISTS shared_contents (
     -- 富媒体内容
     cover_image VARCHAR(1000),
     
-    -- AI处理结果（共享，统一处理）
+    -- AI处理结果（共享，统一处理）- 字段分离优化
     summary TEXT,
-    tags JSON,
+    topics VARCHAR(50) NOT NULL DEFAULT '其他',  -- 单个主题字符串
+    tags JSON,  -- 纯标签数组 ["标签1", "标签2", "标签3"]
     
     -- 系统字段
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -77,13 +79,14 @@ CREATE TABLE IF NOT EXISTS shared_content_media_items (
     FOREIGN KEY (content_id) REFERENCES shared_contents (id) ON DELETE CASCADE
 );
 
--- 4. 关键索引优化
+-- 4. 关键索引优化（新增主题索引）
 -- 共享内容表索引
 CREATE UNIQUE INDEX IF NOT EXISTS idx_shared_content_hash ON shared_contents(content_hash);
 CREATE INDEX IF NOT EXISTS idx_shared_content_guid ON shared_contents(guid);
 CREATE INDEX IF NOT EXISTS idx_shared_content_platform ON shared_contents(platform);
 CREATE INDEX IF NOT EXISTS idx_shared_content_published ON shared_contents(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shared_content_type ON shared_contents(content_type);
+CREATE INDEX IF NOT EXISTS idx_shared_content_topics ON shared_contents(topics);  -- 新增：主题索引
 
 -- 用户关系表索引
 CREATE INDEX IF NOT EXISTS idx_relations_expires ON user_content_relations(expires_at);
@@ -114,7 +117,7 @@ BEGIN
     );
 END;
 
--- 6. 用户友好的查询视图
+-- 6. 用户友好的查询视图（适配字段分离）
 CREATE VIEW IF NOT EXISTS v_user_shared_content AS
 SELECT 
     c.id as content_id,
@@ -132,7 +135,8 @@ SELECT
     c.description,
     c.description_text,
     c.summary,
-    c.tags,
+    c.topics,      -- 新：直接的主题字段
+    c.tags,        -- 新：纯标签JSON数组
     r.is_read,
     r.is_favorited,
     r.read_at,
@@ -155,11 +159,12 @@ WHERE r.expires_at > datetime('now')
 GROUP BY c.id, r.id
 ORDER BY c.published_at DESC;
 
--- 7. 内容统计视图
+-- 7. 内容统计视图（适配字段分离）
 CREATE VIEW IF NOT EXISTS v_shared_content_stats AS
 SELECT 
     c.platform,
     c.content_type,
+    c.topics,      -- 新：按主题统计
     COUNT(DISTINCT c.id) as unique_content_count,
     COUNT(r.id) as total_user_relations,
     COUNT(CASE WHEN r.is_read = 1 THEN 1 END) as read_count,
@@ -172,4 +177,4 @@ SELECT
 FROM shared_contents c
 LEFT JOIN user_content_relations r ON c.id = r.content_id
 WHERE r.expires_at > datetime('now') OR r.expires_at IS NULL
-GROUP BY c.platform, c.content_type; 
+GROUP BY c.platform, c.content_type, c.topics; 

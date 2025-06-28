@@ -6,10 +6,11 @@
 
 import hashlib
 import re
-import sqlite3
 from typing import Optional, Tuple, Dict, Any
 from datetime import datetime
 from loguru import logger
+
+from ..core.database_manager import get_db_connection, get_db_transaction
 
 
 class ContentDeduplicationService:
@@ -61,7 +62,7 @@ class ContentDeduplicationService:
             Optional[int]: 如果存在返回content_id，否则返回None
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -113,7 +114,7 @@ class ContentDeduplicationService:
     async def _create_shared_content(self, content_data: Dict[str, Any], content_hash: str) -> int:
         """创建新的共享内容"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 准备插入数据
@@ -168,7 +169,6 @@ class ContentDeduplicationService:
                 ))
                 
                 content_id = cursor.lastrowid
-                conn.commit()
                 
                 logger.info(f"创建新共享内容: id={content_id}, title={insert_data['title'][:50]}...")
                 return content_id
@@ -223,7 +223,7 @@ class ContentDeduplicationService:
     async def get_content_stats(self) -> Dict[str, Any]:
         """获取内容去重统计信息"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 # 统计共享内容数量

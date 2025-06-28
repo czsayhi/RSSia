@@ -15,7 +15,7 @@ services:
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=sqlite:///./data/rss_subscriber.db
-      - RSSHUB_BASE_URL=https://rsshub.app
+      - RSSHUB_BASE_URL=http://rssia-hub:1200
       - LOG_LEVEL=DEBUG
     depends_on:
       - redis
@@ -54,6 +54,28 @@ services:
     networks:
       - rss_network
 
+  # 自建RSShub实例（解决限流问题）
+  rsshub:
+    image: diygod/rsshub:chromium-bundled
+    container_name: rssia-hub
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: "redis://redis:6379/"
+      CACHE_EXPIRE: 3600
+      # 启用更多路由支持
+      ALLOW_LOCALHOST: "true"
+      DISALLOW_ROBOT: "false"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - rss_network
+    volumes:
+      - rsshub_data:/app/data
+
   # Nginx反向代理（可选）
   nginx:
     image: nginx:alpine
@@ -76,6 +98,8 @@ volumes:
   backend_data:
     driver: local
   redis_data:
+    driver: local
+  rsshub_data:
     driver: local
 
 networks:

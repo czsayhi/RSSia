@@ -90,16 +90,18 @@ class UserContentService:
                 cached_tags = tag_cache_service.get_user_tags_with_cache(user_id)
                 filter_tags = [TagItem(name=tag["name"], count=tag["count"]) for tag in cached_tags]
                 
-                # 2. 构建内容查询SQL
+                # 2. 构建内容查询SQL（使用新的shared_contents架构）
                 base_query = """
                     SELECT 
-                        c.id, c.subscription_id, c.title, c.original_link,
+                        c.id, r.subscription_id, c.title, c.original_link,
                         c.description, c.published_at, c.created_at,
-                        c.is_favorited, c.tags, c.platform, c.feed_title,
-                        c.author, c.cover_image, c.content_type, c.summary
-                    FROM rss_contents c
-                    INNER JOIN user_subscriptions us ON c.subscription_id = us.id
-                    WHERE us.user_id = ?
+                        r.is_favorited, c.tags, c.platform, c.feed_title,
+                        c.author, c.cover_image, c.content_type, c.summary,
+                        r.is_read, r.read_at, r.personal_tags
+                    FROM shared_contents c
+                    JOIN user_content_relations r ON c.id = r.content_id
+                    JOIN user_subscriptions us ON r.subscription_id = us.id
+                    WHERE r.user_id = ? AND r.expires_at > datetime('now')
                 """
                 
                 params = [user_id]
@@ -122,32 +124,32 @@ class UserContentService:
                 cursor.execute(content_query, params)
                 rows = cursor.fetchall()
                 
-                # 5. 处理内容数据
+                # 5. 处理内容数据（适配新架构字段）
                 content_items = []
                 for row in rows:
-                    # 获取媒体项
+                    # 获取媒体项（使用shared_content_media_items表）
                     media_items = self._get_content_media_items(cursor, row[0])
                     
                     # 解析标签
                     tags = json.loads(row[8]) if row[8] else []
                     
                     content_item = ContentItem(
-                        content_id=row[0],
-                        subscription_id=row[1],
-                        title=row[2],
-                        link=row[3],
-                        description=row[4],
-                        published_at=row[5],
-                        fetched_at=row[6],
-                        is_favorited=bool(row[7]),
-                        tags=tags,
-                        platform=row[9],
-                        source_name=row[10],
-                        author=row[11],
-                        cover_image=row[12],
-                        content_type=row[13],
-                        summary=row[14],
-                        media_items=media_items
+                        content_id=row[0],         # c.id
+                        subscription_id=row[1],    # r.subscription_id  
+                        title=row[2],              # c.title
+                        link=row[3],               # c.original_link
+                        description=row[4],        # c.description
+                        published_at=row[5],       # c.published_at
+                        fetched_at=row[6],         # c.created_at
+                        is_favorited=bool(row[7]), # r.is_favorited
+                        tags=tags,                 # c.tags (row[8])
+                        platform=row[9],           # c.platform
+                        source_name=row[10],       # c.feed_title
+                        author=row[11],            # c.author
+                        cover_image=row[12],       # c.cover_image
+                        content_type=row[13],      # c.content_type
+                        summary=row[14],           # c.summary
+                        media_items=media_items    # 关联查询结果
                     )
                     content_items.append(content_item)
                 
@@ -177,17 +179,18 @@ class UserContentService:
     def _get_user_recommended_tags(self, cursor: sqlite3.Cursor, user_id: int) -> List[TagItem]:
         """获取用户推荐标签（基于用户订阅内容统计）"""
         try:
-            # 查询用户所有内容的标签统计
+            # 查询用户所有内容的标签统计（使用新架构）
             query = """
                 SELECT 
                     tag_value,
                     COUNT(*) as tag_count
                 FROM (
                     SELECT json_each.value as tag_value
-                    FROM rss_contents c
-                    INNER JOIN user_subscriptions us ON c.subscription_id = us.id
-                    INNER JOIN json_each(c.tags) 
-                    WHERE us.user_id = ? 
+                    FROM shared_contents c
+                    JOIN user_content_relations r ON c.id = r.content_id
+                    JOIN json_each(c.tags) 
+                    WHERE r.user_id = ? 
+                    AND r.expires_at > datetime('now')
                     AND c.tags IS NOT NULL 
                     AND c.tags != 'null'
                     AND c.tags != '[]'
@@ -212,11 +215,11 @@ class UserContentService:
             return []
     
     def _get_content_media_items(self, cursor: sqlite3.Cursor, content_id: int) -> List[MediaItem]:
-        """获取内容的媒体项"""
+        """获取内容的媒体项（使用新架构的shared_content_media_items表）"""
         try:
             cursor.execute("""
                 SELECT url, media_type, description, duration
-                FROM content_media_items
+                FROM shared_content_media_items
                 WHERE content_id = ?
                 ORDER BY sort_order
             """, (content_id,))

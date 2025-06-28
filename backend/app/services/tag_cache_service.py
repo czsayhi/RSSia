@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from loguru import logger
 
+from ..core.database_manager import get_db_connection, get_db_transaction
+
 
 @dataclass
 class TagCacheEntry:
@@ -29,6 +31,7 @@ class TagCacheService:
     
     def _init_cache_table(self):
         """初始化标签缓存表"""
+        # 注意：这里保留原有的sqlite3.connect()，因为数据库管理器可能还未初始化
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
@@ -51,7 +54,7 @@ class TagCacheService:
     def get_user_tags_from_cache(self, user_id: int) -> Optional[List[Dict[str, any]]]:
         """从缓存获取用户标签"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -87,7 +90,7 @@ class TagCacheService:
     def update_user_tags_cache(self, user_id: int) -> List[Dict[str, any]]:
         """更新用户标签缓存"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 # 计算用户标签
@@ -106,8 +109,6 @@ class TagCacheService:
                     datetime.now().isoformat()
                 ))
                 
-                conn.commit()
-                
                 logger.info(f"用户{user_id}标签缓存已更新: {len(tags)}个标签")
                 return tags
                 
@@ -125,39 +126,55 @@ class TagCacheService:
         # 缓存失效，重新计算
         return self.update_user_tags_cache(user_id)
     
-    def _calculate_user_tags(self, cursor: sqlite3.Cursor, user_id: int) -> List[Dict[str, any]]:
-        """计算用户标签（基于时间加权）"""
+    def _calculate_user_tags(self, cursor, user_id: int) -> List[Dict[str, any]]:
+        """计算用户标签（基于时间加权）- 适配字段分离"""
         try:
-            # 查询用户所有内容的标签统计（时间加权）
+            # 查询用户所有内容的标签统计（时间加权，字段分离版本）
             query = """
                 SELECT 
                     tag_value,
                     SUM(
                         CASE 
-                            WHEN c.published_at > datetime('now', '-7 days') THEN 3
-                            WHEN c.published_at > datetime('now', '-30 days') THEN 2
+                            WHEN published_at > datetime('now', '-7 days') THEN 3
+                            WHEN published_at > datetime('now', '-30 days') THEN 2
                             ELSE 1
                         END
                     ) as weighted_score,
                     COUNT(*) as tag_count
                 FROM (
-                    SELECT json_each.value as tag_value, c.published_at
-                    FROM rss_contents c
-                    INNER JOIN user_subscriptions us ON c.subscription_id = us.id
-                    INNER JOIN json_each(c.tags) 
-                    WHERE us.user_id = ? 
+                    -- 提取topics字段（单个主题字符串）
+                    SELECT 
+                        c.topics as tag_value, 
+                        c.published_at as published_at
+                    FROM shared_contents c
+                    JOIN user_content_relations r ON c.id = r.content_id
+                    WHERE r.user_id = ? 
+                    AND r.expires_at > datetime('now')
+                    AND c.topics IS NOT NULL 
+                    AND c.topics != ''
+                    AND c.topics != '其他'  -- 排除默认主题
+                    
+                    UNION ALL
+                    
+                    -- 提取tags字段（纯标签JSON数组）
+                    SELECT 
+                        json_each.value as tag_value, 
+                        c.published_at as published_at
+                    FROM shared_contents c
+                    JOIN user_content_relations r ON c.id = r.content_id
+                    CROSS JOIN json_each(c.tags)
+                    WHERE r.user_id = ? 
+                    AND r.expires_at > datetime('now')
                     AND c.tags IS NOT NULL 
-                    AND c.tags != 'null'
-                    AND c.tags != '[]'
                     AND json_each.value IS NOT NULL
                     AND json_each.value != ''
-                )
+                ) tagged_content
                 GROUP BY tag_value
                 ORDER BY weighted_score DESC, tag_count DESC
-                LIMIT 10
+                LIMIT 15  -- 增加到15个，包含主题+标签
             """
             
-            cursor.execute(query, (user_id,))
+            cursor.execute(query, (user_id, user_id))  # 需要两个参数，因为UNION ALL
             rows = cursor.fetchall()
             
             tags = []
@@ -176,14 +193,14 @@ class TagCacheService:
             logger.error(f"计算用户标签失败: {e}")
             return []
     
-    def _get_user_content_count(self, cursor: sqlite3.Cursor, user_id: int) -> int:
-        """获取用户内容总数"""
+    def _get_user_content_count(self, cursor, user_id: int) -> int:
+        """获取用户内容总数（使用新架构）"""
         try:
             cursor.execute("""
                 SELECT COUNT(*)
-                FROM rss_contents c
-                INNER JOIN user_subscriptions us ON c.subscription_id = us.id
-                WHERE us.user_id = ?
+                FROM shared_contents c
+                JOIN user_content_relations r ON c.id = r.content_id
+                WHERE r.user_id = ? AND r.expires_at > datetime('now')
             """, (user_id,))
             
             return cursor.fetchone()[0]
@@ -193,18 +210,18 @@ class TagCacheService:
             return 0
     
     def get_users_need_cache_update(self) -> List[int]:
-        """获取需要更新缓存的用户列表"""
+        """获取需要更新缓存的用户列表（使用新架构）"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_connection() as conn:
                 cursor = conn.cursor()
                 
-                # 查找活跃用户（最近7天有内容更新的用户）
+                # 查找活跃用户（最近7天有内容更新的用户，使用新架构）
                 cursor.execute("""
-                    SELECT DISTINCT us.user_id
-                    FROM user_subscriptions us
-                    INNER JOIN rss_contents c ON c.subscription_id = us.id
+                    SELECT DISTINCT r.user_id
+                    FROM user_content_relations r
+                    JOIN shared_contents c ON c.id = r.content_id
                     WHERE c.created_at > datetime('now', '-7 days')
-                    AND us.is_active = 1
+                    AND r.expires_at > datetime('now')
                 """)
                 
                 active_users = [row[0] for row in cursor.fetchall()]
@@ -275,7 +292,7 @@ class TagCacheService:
     def cleanup_expired_cache(self, days: int = 7):
         """清理过期缓存"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with get_db_transaction() as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute("""
@@ -284,7 +301,6 @@ class TagCacheService:
                 """.format(days))
                 
                 deleted_count = cursor.rowcount
-                conn.commit()
                 
                 logger.info(f"清理过期标签缓存: 删除{deleted_count}条记录")
                 return deleted_count

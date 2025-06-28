@@ -185,22 +185,29 @@ class RSSContentDemo:
         """第5步：智能内容处理"""
         print(f"🧠 开始智能处理 {len(entries)} 条内容...")
         
+        # 使用ContentProcessingUtils统一处理
+        from app.services.content_processing_utils import ContentProcessingUtils
+        
         processed_entries = []
         
         for entry in entries:
             try:
-                # 生成智能摘要
-                entry['smart_summary'] = self._generate_summary(
-                    entry['title'], entry['description']
+                # 使用ContentProcessingUtils的完整处理
+                fallback_result = ContentProcessingUtils.process_content_with_fallback(
+                    title=entry['title'],
+                    description=entry['description'],
+                    description_text=entry['description'],  # 使用相同的描述
+                    author="",  # demo中没有作者信息
+                    platform=ContentProcessingUtils.detect_platform(entry['link']),
+                    feed_title=""  # demo中没有feed标题
                 )
                 
-                # 提取智能标签
-                entry['tags'] = self._extract_tags(
-                    entry['title'], entry['description']
-                )
+                # 应用处理结果
+                entry['smart_summary'] = fallback_result['summary']
+                entry['tags'] = fallback_result['tags']  # JSON格式
                 
                 # 识别平台
-                entry['platform'] = self._detect_platform(entry['link'])
+                entry['platform'] = ContentProcessingUtils.detect_platform(entry['link'])
                 
                 processed_entries.append(entry)
                 
@@ -275,59 +282,7 @@ class RSSContentDemo:
         content = f"{title}{link}{description}"
         return hashlib.md5(content.encode('utf-8')).hexdigest()
     
-    def _generate_summary(self, title: str, description: str) -> str:
-        """生成智能摘要"""
-        if len(description) <= 80:
-            return description
-        
-        # 简单的摘要生成逻辑
-        summary = description[:80].rstrip()
-        
-        # 尝试在句号处截断
-        last_period = summary.rfind('。')
-        if last_period > 30:
-            summary = summary[:last_period + 1]
-        
-        return summary + "..."
-    
-    def _extract_tags(self, title: str, description: str) -> List[str]:
-        """提取内容标签"""
-        content = f"{title} {description}".lower()
-        tags = []
-        
-        # 关键词映射
-        keywords = {
-            '游戏': '游戏', '帕鲁': '幻兽帕鲁', '视频': '视频',
-            '音乐': '音乐', '歌手': '音乐', '娱乐': '娱乐',
-            'python': '编程', 'ai': '人工智能', '技术': '技术',
-            'bilibili': '视频', 'weibo': '社交', 'github': '开发'
-        }
-        
-        for keyword, tag in keywords.items():
-            if keyword in content and tag not in tags:
-                tags.append(tag)
-        
-        # 默认标签
-        if not tags:
-            tags.append('其他')
-        
-        return tags[:3]
-    
-    def _detect_platform(self, link: str) -> str:
-        """检测平台"""
-        if not link:
-            return "unknown"
-        
-        domain = urlparse(link).netloc.lower()
-        
-        if 'bilibili.com' in domain:
-            return 'bilibili'
-        elif 'weibo.com' in domain:
-            return 'weibo'
-        elif 'github.com' in domain:
-            return 'github'
-        else:
-            return 'other'
+
 
 
 def main():
