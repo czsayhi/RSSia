@@ -53,6 +53,95 @@
 - **个性化日报**：基于用户订阅内容生成每日报告
 - **智能对话**：基于RAG架构的内容问答系统，结合ChromaDB向量检索，回答准确率90%+
 - **多层安全防护**：基于向量检索的内容过滤、黑名单防护、输出内容审查等机制，确保AI服务的安全性和可靠性
+  
+   ```mermaid
+  graph TB
+      %% 数据输入层
+      subgraph Input ["📥 数据输入层"]
+          RSS["RSS内容入库"]
+          UserQuery["用户对话请求"]
+          Schedule["定时任务触发"]
+      end
+      
+      %% AI处理核心
+      subgraph AICore ["🧠 AI处理核心"]
+          PreProcessor["AI预处理服务<br/>标签摘要生成"]
+          ConversationEngine["对话处理引擎<br/>向量检索+智能回答"]
+          ReportGenerator["日报生成器<br/>内容聚合+摘要"]
+          PromptEngine["Prompt生成引擎<br/>三场景统一管理"]
+      end
+      
+      %% AI模型层
+      subgraph Models ["🤖 AI模型层"]
+          LLM["Qwen2.5-7B-Instruct<br/>本地部署"]
+          VectorModel["Sentence Transformers<br/>768维向量"]
+      end
+      
+      %% 安全和性能层
+      subgraph Security ["🛡️ 安全与性能层"]
+          SecurityFilter["安全过滤器<br/>黑名单+注入检测"]
+          PerformanceManager["性能管理器<br/>缓存+并发+监控"]
+          FallbackHandler["兜底处理器<br/>异常场景处理"]
+      end
+      
+      %% 存储层
+      subgraph Storage ["💾 存储层"]
+          SQLite[("SQLite数据库<br/>内容+AI数据")]
+          ChromaDB[("ChromaDB向量库<br/>语义检索")]
+          Cache[("Redis缓存<br/>对话+会话")]
+      end
+      
+      %% 配置层
+      subgraph Config ["⚙️ 配置层"]
+          TemplateLib["模板库<br/>Prompt模板管理"]
+          BlacklistLib["黑名单库<br/>安全规则配置"]
+          ConfigManager["配置管理器<br/>系统参数调优"]
+      end
+      
+      %% 主要数据流
+      RSS --> PreProcessor
+      UserQuery --> ConversationEngine
+      Schedule --> ReportGenerator
+      
+      PreProcessor --> PromptEngine
+      ConversationEngine --> PromptEngine
+      ReportGenerator --> PromptEngine
+      
+      PromptEngine --> LLM
+      PreProcessor --> VectorModel
+      ConversationEngine --> VectorModel
+      
+      %% 安全和性能连接
+      ConversationEngine --> SecurityFilter
+      SecurityFilter --> PerformanceManager
+      PerformanceManager --> FallbackHandler
+      
+      %% 存储连接
+      PreProcessor --> SQLite
+      PreProcessor --> ChromaDB
+      ConversationEngine --> ChromaDB
+      ConversationEngine --> SQLite
+      ReportGenerator --> SQLite
+      PerformanceManager --> Cache
+      
+      %% 配置连接
+      PromptEngine --> TemplateLib
+      SecurityFilter --> BlacklistLib
+      AICore --> ConfigManager
+      
+      %% 样式定义
+      style RSS fill:#e1f5fe
+      style UserQuery fill:#f3e5f5
+      style Schedule fill:#f3e5f5
+      style LLM fill:#ffea00
+      style VectorModel fill:#e3f2fd
+      style PromptEngine fill:#fff3e0
+      style SecurityFilter fill:#ffebee
+      style FallbackHandler fill:#f1f8e9
+      style SQLite fill:#e8f5e8
+      style ChromaDB fill:#e8f5e8
+      style Cache fill:#e8f5e8
+  ```
 
 ### 📊 **高效内容管理**
 - **共享内容存储**：去重优化，多用户订阅相同内容时，存储空间节省60%+
